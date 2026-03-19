@@ -3,11 +3,20 @@ import { arrayMove } from "@dnd-kit/sortable";
 import type {
   ColumnTemplateBlock,
   ContainerTemplateBlock,
+  GalleryTemplateBlock,
+  ImageTemplateBlock,
   TemplateBlock,
   TemplateLayout,
+  TitleTemplateBlock,
+  RichTextTemplateBlock,
 } from "@/lib/template-schema";
 
 type TemplateContainerBlock = ColumnTemplateBlock | ContainerTemplateBlock;
+export type TemplateContentBlock =
+  | TitleTemplateBlock
+  | RichTextTemplateBlock
+  | ImageTemplateBlock
+  | GalleryTemplateBlock;
 
 export function canReceiveChildren(
   block: TemplateBlock | undefined,
@@ -66,6 +75,16 @@ export function insertBlock(
       },
     },
   };
+}
+
+export function getContentBlocksInOrder(layout: TemplateLayout): TemplateContentBlock[] {
+  const blocks: TemplateContentBlock[] = [];
+
+  for (const rootBlockId of layout.rootBlockIds) {
+    collectContentBlocks(layout, rootBlockId, blocks);
+  }
+
+  return blocks;
 }
 
 export function moveBlock(
@@ -220,6 +239,31 @@ function collectDescendants(
 
   for (const childId of block.children) {
     collectDescendants(layout, childId, idsToRemove);
+  }
+}
+
+function collectContentBlocks(
+  layout: TemplateLayout,
+  blockId: string,
+  blocks: TemplateContentBlock[],
+) {
+  const block = layout.blocks[blockId];
+  if (!block) {
+    return;
+  }
+
+  if (
+    block.kind === "title" ||
+    block.kind === "richText" ||
+    block.kind === "image" ||
+    block.kind === "gallery"
+  ) {
+    blocks.push(block);
+    return;
+  }
+
+  for (const childId of block.children) {
+    collectContentBlocks(layout, childId, blocks);
   }
 }
 
