@@ -2,40 +2,71 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
-type TabType = "html" | "css" | "preview";
+import TemplateCanvasPreview from "@/components/template-editor/TemplateCanvasPreview";
+import TemplateStructureEditor from "@/components/template-editor/TemplateStructureEditor";
+import { templatesApi } from "@/lib/api";
+import { createEmptyTemplateLayout, createTemplateBlock } from "@/lib/template-defaults";
+import { insertBlock } from "@/lib/template-layout";
+import type { TemplateBlockKind, TemplateLayout } from "@/lib/template-schema";
 
-const defaultHtml = `<article class="post">
-  <header class="post-header">
-    <h1 class="post-title">{{title}}</h1>
-    <div class="post-meta">
-      <span>{{publishedAt}}</span>
-      <span>{{category}}</span>
-    </div>
-  </header>
-  <div class="post-content">
-    {{content}}
-  </div>
-</article>`;
+type TabType = "canvas" | "json";
 
-const defaultCss = `.post { max-width: 800px; margin: 0 auto; padding: 2rem 1rem; }
-.post-title { font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; }
-.post-meta { color: #6b7280; font-size: 0.875rem; margin-bottom: 1.5rem; }
-.post-content { font-size: 1.1rem; line-height: 1.75; }`;
+const AVAILABLE_BLOCKS: { kind: TemplateBlockKind; label: string }[] = [
+  { kind: "title", label: "Title" },
+  { kind: "richText", label: "Rich Text" },
+  { kind: "image", label: "Image" },
+  { kind: "gallery", label: "Gallery" },
+  { kind: "column", label: "Columns" },
+  { kind: "container", label: "Container" },
+];
 
 export default function NewTemplatePage() {
-  const [activeTab, setActiveTab] = useState<TabType>("html");
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<TabType>("canvas");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [htmlStructure, setHtmlStructure] = useState(defaultHtml);
-  const [cssStyles, setCssStyles] = useState(defaultCss);
   const [isDefault, setIsDefault] = useState(false);
+  const [layout, setLayout] = useState<TemplateLayout>(createEmptyTemplateLayout);
+  const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const tabs: { id: TabType; label: string }[] = [
-    { id: "html", label: "HTML Structure" },
-    { id: "css", label: "CSS Styles" },
-    { id: "preview", label: "Preview" },
+    { id: "canvas", label: "Canvas" },
+    { id: "json", label: "Layout JSON" },
   ];
+
+  function addRootBlock(kind: TemplateBlockKind) {
+    const block = createTemplateBlock(kind);
+    setLayout((currentLayout) => insertBlock(currentLayout, block, selectedParentId));
+  }
+
+  async function handleSaveTemplate() {
+    if (!name.trim()) {
+      setSaveError("Template name is required.");
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveError(null);
+
+    try {
+      const createdTemplate = await templatesApi.create({
+        name: name.trim(),
+        description: description.trim() || undefined,
+        isDefault,
+        layout,
+      });
+
+      router.push(`/templates/${createdTemplate.id}`);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Failed to save template.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -64,6 +95,25 @@ export default function NewTemplatePage() {
             className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm placeholder-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
 
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-semibold text-gray-900">Block Palette</h2>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {AVAILABLE_BLOCKS.map((block) => (
+                <button
+                  key={block.kind}
+                  type="button"
+                  onClick={() => addRootBlock(block.kind)}
+                  className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 transition-colors hover:border-indigo-300 hover:text-indigo-700"
+                >
+                  + {block.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-gray-500">
+              Blocks insert at the current target, and the structure panel supports drag sorting.
+            </p>
+          </div>
+
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden">
             <div className="flex border-b border-gray-200">
               {tabs.map((tab) => (
@@ -81,37 +131,17 @@ export default function NewTemplatePage() {
               ))}
             </div>
 
-            {activeTab === "html" && (
-              <textarea
-                value={htmlStructure}
-                onChange={(e) => setHtmlStructure(e.target.value)}
-                rows={20}
-                className="w-full px-4 py-3 font-mono text-sm focus:outline-none resize-none"
-              />
+            {activeTab === "canvas" && (
+              <div className="min-h-[480px] bg-slate-100 p-6">
+                <TemplateCanvasPreview layout={layout} />
+              </div>
             )}
 
-            {activeTab === "css" && (
-              <textarea
-                value={cssStyles}
-                onChange={(e) => setCssStyles(e.target.value)}
-                rows={20}
-                className="w-full px-4 py-3 font-mono text-sm focus:outline-none resize-none"
-              />
-            )}
-
-            {activeTab === "preview" && (
-              <div className="p-6 min-h-[480px]">
-                <style dangerouslySetInnerHTML={{ __html: cssStyles }} />
-                <div
-                  dangerouslySetInnerHTML={{
-                    __html: htmlStructure
-                      .replace(/\{\{title\}\}/g, name || "Sample Post Title")
-                      .replace(/\{\{content\}\}/g, "<p>Sample post content goes here…</p>")
-                      .replace(/\{\{publishedAt\}\}/g, new Date().toLocaleDateString())
-                      .replace(/\{\{category\}\}/g, "Technology")
-                      .replace(/\{\{tags\}\}/g, "TypeScript, Next.js"),
-                  }}
-                />
+            {activeTab === "json" && (
+              <div className="min-h-[480px] bg-slate-950 p-4">
+                <pre className="overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-900 p-4 font-mono text-xs text-slate-200">
+                  {JSON.stringify(layout, null, 2)}
+                </pre>
               </div>
             )}
           </div>
@@ -132,6 +162,19 @@ export default function NewTemplatePage() {
               <span className="text-sm text-gray-700">Set as default template</span>
             </label>
 
+            <div className="rounded-lg bg-gray-50 px-3 py-3 text-sm text-gray-600">
+              <p className="font-medium text-gray-900">Canvas</p>
+              <p className="mt-1">Width: {layout.canvas.width}px</p>
+              <p>Min row height: {layout.canvas.minRowHeight}px</p>
+              <p>Root blocks: {layout.rootBlockIds.length}</p>
+            </div>
+
+            {saveError ? (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {saveError}
+              </div>
+            ) : null}
+
             <div className="flex gap-2 pt-2">
               <Link
                 href="/templates"
@@ -141,20 +184,23 @@ export default function NewTemplatePage() {
               </Link>
               <button
                 type="button"
+                onClick={() => void handleSaveTemplate()}
+                disabled={isSaving}
                 className="flex-1 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors"
               >
-                Save Template
+                {isSaving ? "Saving..." : "Save Template"}
               </button>
             </div>
           </div>
 
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5 space-y-2">
-            <h2 className="font-semibold text-gray-900 text-sm">Available Variables</h2>
-            <ul className="space-y-1 text-xs text-gray-600 font-mono">
-              {["{{title}}", "{{content}}", "{{excerpt}}", "{{publishedAt}}", "{{category}}", "{{tags}}", "{{featuredImage}}"].map((v) => (
-                <li key={v} className="bg-gray-50 rounded px-2 py-1">{v}</li>
-              ))}
-            </ul>
+            <h2 className="font-semibold text-gray-900 text-sm">Structure</h2>
+            <TemplateStructureEditor
+              layout={layout}
+              selectedParentId={selectedParentId}
+              onLayoutChange={setLayout}
+              onSelectParent={setSelectedParentId}
+            />
           </div>
         </div>
       </div>

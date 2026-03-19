@@ -1,7 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+
+import RichTextContent from "@/components/rte/RichTextContent";
+import RichTextEditor from "@/components/rte/RichTextEditor";
+import { categoriesApi, templatesApi, type Category } from "@/lib/api";
+import type { TemplateSummary } from "@/lib/template-schema";
 
 type TabType = "write" | "preview";
 
@@ -12,6 +17,56 @@ export default function NewPostPage() {
   const [excerpt, setExcerpt] = useState("");
   const [status, setStatus] = useState("Draft");
   const [scheduledAt, setScheduledAt] = useState("");
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [organizationError, setOrganizationError] = useState<string | null>(null);
+  const [isOrganizationLoading, setIsOrganizationLoading] = useState(true);
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function loadOrganizationData() {
+      try {
+        const [nextCategories, nextTemplates] = await Promise.all([
+          categoriesApi.list(),
+          templatesApi.list(),
+        ]);
+
+        if (!isActive) {
+          return;
+        }
+
+        setCategories(nextCategories);
+        setTemplates(nextTemplates);
+        setOrganizationError(null);
+      } catch (error) {
+        if (!isActive) {
+          return;
+        }
+
+        setOrganizationError(
+          error instanceof Error ? error.message : "Failed to load categories and templates.",
+        );
+      } finally {
+        if (isActive) {
+          setIsOrganizationLoading(false);
+        }
+      }
+    }
+
+    void loadOrganizationData();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const selectedCategory = categories.find(
+    (category) => String(category.id) === selectedCategoryId,
+  );
+  const categoryDefaultTemplateName = selectedCategory?.defaultTemplateName;
 
   return (
     <div className="space-y-6">
@@ -59,19 +114,21 @@ export default function NewPostPage() {
             </div>
 
             {activeTab === "write" ? (
-              <textarea
-                placeholder="Write your post content here… (Markdown supported)"
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                rows={20}
-                className="w-full px-4 py-3 font-mono text-sm focus:outline-none resize-none"
-              />
+              <div className="p-4">
+                <RichTextEditor
+                  initialContent={content}
+                  placeholder="Write your post content here… Markdown links and spoiler syntax are supported."
+                  ariaLabel="Post content"
+                  onChange={(json) => setContent(JSON.stringify(json))}
+                  className="min-h-[480px]"
+                />
+              </div>
             ) : (
               <div className="px-6 py-4 prose max-w-none min-h-[480px]">
                 {content ? (
                   <div>
                     {title && <h1>{title}</h1>}
-                    <pre className="whitespace-pre-wrap font-sans text-gray-700">{content}</pre>
+                    <RichTextContent content={content} className="text-gray-700" />
                   </div>
                 ) : (
                   <p className="text-gray-400 italic">Nothing to preview yet.</p>
@@ -145,11 +202,32 @@ export default function NewPostPage() {
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5 space-y-4">
             <h2 className="font-semibold text-gray-900">Organization</h2>
 
+            {organizationError ? (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {organizationError}
+              </div>
+            ) : null}
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-              <select className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+              <select
+                value={selectedCategoryId}
+                onChange={(e) => setSelectedCategoryId(e.target.value)}
+                disabled={isOrganizationLoading}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-400"
+              >
                 <option value="">Select a category…</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
               </select>
+              {selectedCategory?.defaultTemplateName ? (
+                <p className="mt-2 text-xs text-gray-500">
+                  Category default template: {selectedCategory.defaultTemplateName}
+                </p>
+              ) : null}
             </div>
 
             <div>
@@ -163,9 +241,27 @@ export default function NewPostPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Layout Template</label>
-              <select className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                <option value="">Use category default…</option>
+              <select
+                value={selectedTemplateId}
+                onChange={(e) => setSelectedTemplateId(e.target.value)}
+                disabled={isOrganizationLoading}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-400"
+              >
+                <option value="">
+                  {categoryDefaultTemplateName
+                    ? `Use category default (${categoryDefaultTemplateName})`
+                    : "Use category default…"}
+                </option>
+                {templates.map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {template.name}
+                    {template.isDefault ? " (global default)" : ""}
+                  </option>
+                ))}
               </select>
+              <p className="mt-2 text-xs text-gray-500">
+                This will drive the template-aware editor once block content inputs are added.
+              </p>
             </div>
           </div>
 

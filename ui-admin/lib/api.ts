@@ -1,4 +1,6 @@
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
+import type { LayoutTemplate, PostTemplateContent, TemplateSummary } from "@/lib/template-schema";
+
+export const API_BASE_URL = "";
 
 export type PostStatus = "Draft" | "Scheduled" | "Published" | "Archived";
 
@@ -7,6 +9,7 @@ export interface Post {
   title: string;
   slug: string;
   content: string;
+  templateContent?: PostTemplateContent;
   excerpt?: string;
   featuredImageUrl?: string;
   status: PostStatus;
@@ -32,6 +35,8 @@ export interface PostSummary {
   scheduledAt?: string;
   categoryId?: number;
   categoryName?: string;
+  templateId?: number;
+  templateName?: string;
   tags: string[];
   createdAt: string;
   updatedAt: string;
@@ -55,17 +60,6 @@ export interface Tag {
   slug: string;
   postCount: number;
   createdAt: string;
-}
-
-export interface LayoutTemplate {
-  id: number;
-  name: string;
-  description: string;
-  htmlStructure: string;
-  cssStyles: string;
-  isDefault: boolean;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface AnalyticsSummary {
@@ -131,7 +125,7 @@ export const tagsApi = {
 
 // ---- Templates ----
 export const templatesApi = {
-  list: () => apiFetch<LayoutTemplate[]>("/api/layouttemplates"),
+  list: () => apiFetch<TemplateSummary[]>("/api/layouttemplates"),
   get: (id: number) => apiFetch<LayoutTemplate>(`/api/layouttemplates/${id}`),
   create: (data: unknown) =>
     apiFetch<LayoutTemplate>("/api/layouttemplates", { method: "POST", body: JSON.stringify(data) }),
