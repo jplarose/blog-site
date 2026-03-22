@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   getContentBlocksInOrder,
   insertBlock,
+  insertBlockAt,
   moveBlock,
+  moveBlockToPosition,
   updateBlockSize,
+  updateBlockStyle,
 } from "@/lib/template-layout";
 import type { TemplateLayout } from "@/lib/template-schema";
 
@@ -189,5 +192,190 @@ describe("template-layout helpers", () => {
     expect(sizedLayout.blocks["title-b"]?.size).toEqual({
       widthMode: "fraction",
     });
+  });
+
+  it("inserts a new block at the hovered root position", () => {
+    const layout = createLayout();
+
+    const nextLayout = insertBlockAt(
+      layout,
+      {
+        id: "gallery-new",
+        kind: "gallery",
+        label: "Gallery",
+        content: {
+          key: "gallery_new",
+          kind: "gallery",
+          label: "Gallery",
+        },
+      },
+      null,
+      1,
+    );
+
+    expect(nextLayout.rootBlockIds).toEqual(["container-a", "gallery-new", "title-b"]);
+    expect(nextLayout.blocks["gallery-new"]?.parentId).toBeNull();
+  });
+
+  it("moves an existing block to an explicit index in a row container", () => {
+    const layout = createLayout();
+
+    const withColumn = insertBlock(
+      layout,
+      {
+        id: "column-a",
+        kind: "column",
+        label: "Columns",
+        parentId: null,
+        children: ["card-left", "card-right"],
+        props: { direction: "row", columns: 2 },
+      },
+      null,
+    );
+
+    const withChildren = {
+      ...withColumn,
+      blocks: {
+        ...withColumn.blocks,
+        "card-left": {
+          id: "card-left",
+          kind: "image",
+          label: "Left",
+          parentId: "column-a",
+          content: {
+            key: "left",
+            kind: "image",
+            label: "Left",
+          },
+        },
+        "card-right": {
+          id: "card-right",
+          kind: "richText",
+          label: "Right",
+          parentId: "column-a",
+          content: {
+            key: "right",
+            kind: "richText",
+            label: "Right",
+          },
+        },
+      },
+    } satisfies TemplateLayout;
+
+    const movedLayout = moveBlockToPosition(withChildren, "title-b", null, "column-a", 1);
+
+    expect(movedLayout.rootBlockIds).toEqual(["container-a", "column-a"]);
+    expect(movedLayout.blocks["title-b"]?.parentId).toBe("column-a");
+    expect(movedLayout.blocks["column-a"]?.kind).toBe("column");
+    expect(movedLayout.blocks["column-a"]?.children).toEqual(["card-left", "title-b", "card-right"]);
+  });
+
+  it("normalizes style controls before persisting them", () => {
+    const layout = createLayout();
+
+    const styledLayout = updateBlockStyle(layout, "title-b", {
+      gap: 24,
+      backgroundColor: " #ffffff ",
+      textColor: "#111827",
+      textAlign: "center",
+      borderRadius: 20,
+      borderWidth: 2,
+      borderColor: "#cbd5e1",
+      padding: {
+        top: 12,
+        right: 16,
+        bottom: 12,
+        left: 16,
+      },
+    });
+
+    expect(styledLayout.blocks["title-b"]?.style).toEqual({
+      gap: 24,
+      backgroundColor: "#ffffff",
+      textColor: "#111827",
+      textAlign: "center",
+      borderRadius: 20,
+      borderWidth: 2,
+      borderColor: "#cbd5e1",
+      padding: {
+        top: 12,
+        right: 16,
+        bottom: 12,
+        left: 16,
+      },
+    });
+  });
+
+  it("drops invalid spacing values while preserving valid padding and margin edges", () => {
+    const layout = createLayout();
+
+    const styledLayout = updateBlockStyle(layout, "title-b", {
+      padding: {
+        top: 12,
+        right: -4,
+        bottom: 18,
+        left: Number.NaN,
+      },
+      margin: {
+        top: 0,
+        right: 24,
+        bottom: undefined,
+        left: 8,
+      },
+    });
+
+    expect(styledLayout.blocks["title-b"]?.style).toEqual({
+      padding: {
+        top: 12,
+        right: undefined,
+        bottom: 18,
+        left: undefined,
+      },
+      margin: {
+        top: 0,
+        right: 24,
+        bottom: undefined,
+        left: 8,
+      },
+    });
+  });
+
+  it("drops into the expected right-hand slot of a column block", () => {
+    const layout = createLayout();
+    const withColumn = insertBlock(
+      layout,
+      {
+        id: "column-b",
+        kind: "column",
+        label: "Columns",
+        parentId: null,
+        children: ["image-left"],
+        props: { direction: "row", columns: 2 },
+      },
+      null,
+    );
+
+    const withLeftImage = {
+      ...withColumn,
+      blocks: {
+        ...withColumn.blocks,
+        "image-left": {
+          id: "image-left",
+          kind: "image",
+          label: "Image Left",
+          parentId: "column-b",
+          content: {
+            key: "image_left",
+            kind: "image",
+            label: "Image Left",
+          },
+        },
+      },
+    } satisfies TemplateLayout;
+
+    const movedLayout = moveBlockToPosition(withLeftImage, "title-b", null, "column-b", 1);
+
+    expect(movedLayout.blocks["column-b"]?.kind).toBe("column");
+    expect(movedLayout.blocks["column-b"]?.children).toEqual(["image-left", "title-b"]);
   });
 });

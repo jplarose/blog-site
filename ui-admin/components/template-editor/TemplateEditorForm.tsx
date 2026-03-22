@@ -6,39 +6,29 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { templatesApi } from "@/lib/api";
-import { createEmptyTemplateLayout, createTemplateBlock } from "@/lib/template-defaults";
-import { insertBlock, updateBlockSize } from "@/lib/template-layout";
+import { createEmptyTemplateLayout } from "@/lib/template-defaults";
+import { updateBlockSize, updateBlockStyle } from "@/lib/template-layout";
 import type {
   LayoutTemplate,
-  TemplateBlockKind,
   TemplateBlockSize,
+  TemplateBlockStyle,
+  TemplateSpacing,
+  TemplateTextAlign,
   TemplateLayout,
   TemplateWidthMode,
 } from "@/lib/template-schema";
-import TemplateCanvasPreview from "@/components/template-editor/TemplateCanvasPreview";
 
-const TemplateStructureEditor = dynamic(
-  () => import("@/components/template-editor/TemplateStructureEditor"),
+const TemplateCanvasEditor = dynamic(
+  () => import("@/components/template-editor/TemplateCanvasEditor"),
   {
     ssr: false,
     loading: () => (
       <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-        Loading structure editor…
+        Loading canvas editor…
       </div>
     ),
   },
 );
-
-type TabType = "canvas" | "json";
-
-const AVAILABLE_BLOCKS: { kind: TemplateBlockKind; label: string }[] = [
-  { kind: "title", label: "Title" },
-  { kind: "richText", label: "Rich Text" },
-  { kind: "image", label: "Image" },
-  { kind: "gallery", label: "Gallery" },
-  { kind: "column", label: "Columns" },
-  { kind: "container", label: "Container" },
-];
 
 interface TemplateEditorFormProps {
   mode: "create" | "edit";
@@ -50,22 +40,15 @@ export default function TemplateEditorForm({
   initialTemplate = null,
 }: TemplateEditorFormProps) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabType>("canvas");
   const [name, setName] = useState(initialTemplate?.name ?? "");
   const [description, setDescription] = useState(initialTemplate?.description ?? "");
   const [isDefault, setIsDefault] = useState(initialTemplate?.isDefault ?? false);
   const [layout, setLayout] = useState<TemplateLayout>(
     initialTemplate?.layout ?? createEmptyTemplateLayout(),
   );
-  const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-
-  function addBlock(kind: TemplateBlockKind) {
-    const block = createTemplateBlock(kind);
-    setLayout((currentLayout) => insertBlock(currentLayout, block, selectedParentId));
-  }
 
   async function handleSaveTemplate() {
     if (!name.trim()) {
@@ -120,6 +103,58 @@ export default function TemplateEditorForm({
     setLayout((currentLayout) => updateBlockSize(currentLayout, selectedBlockId, nextSize));
   }
 
+  function handleBlockStyleChange(
+    field: keyof TemplateBlockStyle,
+    value?: number | string | TemplateTextAlign,
+  ) {
+    if (!selectedBlockId) {
+      return;
+    }
+
+    const nextStyle: TemplateBlockStyle = {
+      ...(selectedBlock?.style ?? {}),
+    };
+
+    if (value === undefined || value === "") {
+      delete nextStyle[field];
+    } else {
+      nextStyle[field] = value as never;
+    }
+
+    setLayout((currentLayout) => updateBlockStyle(currentLayout, selectedBlockId, nextStyle));
+  }
+
+  function handleBlockSpacingChange(
+    field: "padding" | "margin",
+    side: keyof TemplateSpacing,
+    value?: number,
+  ) {
+    if (!selectedBlockId) {
+      return;
+    }
+
+    const currentSpacing = selectedBlock?.style?.[field];
+    const nextSpacing: TemplateSpacing = {
+      top: currentSpacing?.top,
+      right: currentSpacing?.right,
+      bottom: currentSpacing?.bottom,
+      left: currentSpacing?.left,
+    };
+
+    if (value === undefined) {
+      delete nextSpacing[side];
+    } else {
+      nextSpacing[side] = value;
+    }
+
+    const nextStyle: TemplateBlockStyle = {
+      ...(selectedBlock?.style ?? {}),
+      [field]: nextSpacing,
+    };
+
+    setLayout((currentLayout) => updateBlockStyle(currentLayout, selectedBlockId, nextStyle));
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -146,54 +181,12 @@ export default function TemplateEditorForm({
             className="w-full rounded-lg border border-gray-300 px-4 py-2 text-sm placeholder-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
           />
 
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-semibold text-gray-900">Block Palette</h2>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {AVAILABLE_BLOCKS.map((block) => (
-                <button
-                  key={block.kind}
-                  type="button"
-                  onClick={() => addBlock(block.kind)}
-                  className="rounded-full border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 transition-colors hover:border-indigo-300 hover:text-indigo-700"
-                >
-                  + {block.label}
-                </button>
-              ))}
-            </div>
-            <p className="mt-3 text-xs text-gray-500">
-              Blocks insert at the current target, and the structure panel supports drag sorting.
-            </p>
-          </div>
-
-          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-            <div className="flex border-b border-gray-200">
-              {(["canvas", "json"] as const).map((tabId) => (
-                <button
-                  key={tabId}
-                  onClick={() => setActiveTab(tabId)}
-                  className={`px-5 py-3 text-sm font-medium transition-colors ${
-                    activeTab === tabId
-                      ? "border-b-2 border-indigo-600 text-indigo-600"
-                      : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  {tabId === "canvas" ? "Canvas" : "Layout JSON"}
-                </button>
-              ))}
-            </div>
-
-            {activeTab === "canvas" ? (
-              <div className="min-h-[480px] bg-slate-100 p-6">
-                <TemplateCanvasPreview layout={layout} />
-              </div>
-            ) : (
-              <div className="min-h-[480px] bg-slate-950 p-4">
-                <pre className="overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-900 p-4 font-mono text-xs text-slate-200">
-                  {JSON.stringify(layout, null, 2)}
-                </pre>
-              </div>
-            )}
-          </div>
+          <TemplateCanvasEditor
+            layout={layout}
+            selectedBlockId={selectedBlockId}
+            onLayoutChange={setLayout}
+            onSelectBlock={setSelectedBlockId}
+          />
         </div>
 
         <div className="space-y-4">
@@ -211,10 +204,10 @@ export default function TemplateEditorForm({
             </label>
 
             <div className="rounded-lg bg-gray-50 px-3 py-3 text-sm text-gray-600">
-              <p className="font-medium text-gray-900">Canvas</p>
+              <p className="font-medium text-gray-900">Layout Snapshot</p>
               <p className="mt-1">Width: {layout.canvas.width}px</p>
-              <p>Min row height: {layout.canvas.minRowHeight}px</p>
-              <p>Root blocks: {layout.rootBlockIds.length}</p>
+              <p>Blocks on page: {Object.keys(layout.blocks).length}</p>
+              <p>Top-level sections: {layout.rootBlockIds.length}</p>
             </div>
 
             <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
@@ -295,9 +288,147 @@ export default function TemplateEditorForm({
                 </div>
               ) : (
                 <p className="mt-2 text-sm text-gray-500">
-                  Select a block in the structure panel to control its width and height.
+                  Select a block directly on the page to control its width and height.
                 </p>
               )}
+            </div>
+
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
+              <p className="font-medium text-gray-900">Block Style</p>
+              {selectedBlock ? (
+                <div className="mt-3 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium text-gray-500">Gap</span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={selectedBlock.style?.gap ?? ""}
+                        onChange={(event) =>
+                          handleBlockStyleChange("gap", parseOptionalNumber(event.target.value))
+                        }
+                        className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        placeholder="e.g. 16"
+                      />
+                    </label>
+
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium text-gray-500">Text Align</span>
+                      <select
+                        value={selectedBlock.style?.textAlign ?? ""}
+                        onChange={(event) =>
+                          handleBlockStyleChange(
+                            "textAlign",
+                            (event.target.value || undefined) as TemplateTextAlign | undefined,
+                          )
+                        }
+                        className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      >
+                        <option value="">Default</option>
+                        <option value="left">Left</option>
+                        <option value="center">Center</option>
+                        <option value="right">Right</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium text-gray-500">Background</span>
+                      <input
+                        type="text"
+                        value={selectedBlock.style?.backgroundColor ?? ""}
+                        onChange={(event) =>
+                          handleBlockStyleChange("backgroundColor", event.target.value || undefined)
+                        }
+                        className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        placeholder="#ffffff"
+                      />
+                    </label>
+
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium text-gray-500">Text Color</span>
+                      <input
+                        type="text"
+                        value={selectedBlock.style?.textColor ?? ""}
+                        onChange={(event) =>
+                          handleBlockStyleChange("textColor", event.target.value || undefined)
+                        }
+                        className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        placeholder="#0f172a"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium text-gray-500">Radius</span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={selectedBlock.style?.borderRadius ?? ""}
+                        onChange={(event) =>
+                          handleBlockStyleChange("borderRadius", parseOptionalNumber(event.target.value))
+                        }
+                        className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        placeholder="24"
+                      />
+                    </label>
+
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium text-gray-500">Border</span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={selectedBlock.style?.borderWidth ?? ""}
+                        onChange={(event) =>
+                          handleBlockStyleChange("borderWidth", parseOptionalNumber(event.target.value))
+                        }
+                        className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        placeholder="1"
+                      />
+                    </label>
+
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium text-gray-500">Border Color</span>
+                      <input
+                        type="text"
+                        value={selectedBlock.style?.borderColor ?? ""}
+                        onChange={(event) =>
+                          handleBlockStyleChange("borderColor", event.target.value || undefined)
+                        }
+                        className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        placeholder="#cbd5e1"
+                      />
+                    </label>
+                  </div>
+
+                  <SpacingEditor
+                    label="Padding"
+                    spacing={selectedBlock.style?.padding}
+                    onChange={(side, value) => handleBlockSpacingChange("padding", side, value)}
+                  />
+
+                  <SpacingEditor
+                    label="Margin"
+                    spacing={selectedBlock.style?.margin}
+                    onChange={(side, value) => handleBlockSpacingChange("margin", side, value)}
+                  />
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-gray-500">
+                  Select a block on the page to adjust spacing, color, alignment, and borders.
+                </p>
+              )}
+            </div>
+
+            <div className="rounded-lg border border-gray-200 bg-slate-950 p-4">
+              <p className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+                Layout JSON
+              </p>
+              <pre className="max-h-[320px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-900 p-3 font-mono text-[11px] text-slate-200">
+                {JSON.stringify(layout, null, 2)}
+              </pre>
             </div>
 
             {saveError ? (
@@ -323,18 +454,6 @@ export default function TemplateEditorForm({
               </button>
             </div>
           </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5 space-y-2">
-            <h2 className="font-semibold text-gray-900 text-sm">Structure</h2>
-            <TemplateStructureEditor
-              layout={layout}
-              selectedParentId={selectedParentId}
-              selectedBlockId={selectedBlockId}
-              onLayoutChange={setLayout}
-              onSelectParent={setSelectedParentId}
-              onSelectBlock={setSelectedBlockId}
-            />
-          </div>
         </div>
       </div>
     </div>
@@ -348,4 +467,42 @@ function parseOptionalNumber(value: string) {
 
   const parsedValue = Number(value);
   return Number.isFinite(parsedValue) ? parsedValue : undefined;
+}
+
+function SpacingEditor({
+  label,
+  spacing,
+  onChange,
+}: {
+  label: string;
+  spacing?: TemplateSpacing;
+  onChange: (side: keyof TemplateSpacing, value?: number) => void;
+}) {
+  const fields: Array<{ key: keyof TemplateSpacing; label: string }> = [
+    { key: "top", label: "Top" },
+    { key: "right", label: "Right" },
+    { key: "bottom", label: "Bottom" },
+    { key: "left", label: "Left" },
+  ];
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-gray-500">{label}</p>
+      <div className="grid grid-cols-2 gap-3">
+        {fields.map((field) => (
+          <label key={field.key} className="block space-y-1">
+            <span className="text-xs font-medium text-gray-500">{field.label}</span>
+            <input
+              type="number"
+              min={0}
+              value={spacing?.[field.key] ?? ""}
+              onChange={(event) => onChange(field.key, parseOptionalNumber(event.target.value))}
+              className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              placeholder="0"
+            />
+          </label>
+        ))}
+      </div>
+    </div>
+  );
 }

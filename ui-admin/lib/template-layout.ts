@@ -6,6 +6,7 @@ import type {
   GalleryTemplateBlock,
   ImageTemplateBlock,
   TemplateBlockSize,
+  TemplateBlockStyle,
   TemplateBlock,
   TemplateLayout,
   TitleTemplateBlock,
@@ -43,11 +44,26 @@ export function insertBlock(
   block: TemplateBlock,
   parentId: string | null = null,
 ): TemplateLayout {
+  return insertBlockAt(layout, block, parentId, getChildBlockIds(layout, parentId).length);
+}
+
+export function insertBlockAt(
+  layout: TemplateLayout,
+  block: TemplateBlock,
+  parentId: string | null,
+  index: number,
+): TemplateLayout {
+  const siblings = getChildBlockIds(layout, parentId);
+  const nextIndex = Math.max(0, Math.min(index, siblings.length));
+
   if (parentId) {
     const parent = layout.blocks[parentId];
     if (!parent || !canReceiveChildren(parent)) {
       return layout;
     }
+
+    const nextChildren = [...parent.children];
+    nextChildren.splice(nextIndex, 0, block.id);
 
     return {
       ...layout,
@@ -55,7 +71,7 @@ export function insertBlock(
         ...layout.blocks,
         [parentId]: {
           ...parent,
-          children: [...parent.children, block.id],
+          children: nextChildren,
         },
         [block.id]: {
           ...block,
@@ -65,14 +81,53 @@ export function insertBlock(
     };
   }
 
+  const nextRootBlockIds = [...layout.rootBlockIds];
+  nextRootBlockIds.splice(nextIndex, 0, block.id);
+
   return {
     ...layout,
-    rootBlockIds: [...layout.rootBlockIds, block.id],
+    rootBlockIds: nextRootBlockIds,
     blocks: {
       ...layout.blocks,
       [block.id]: {
         ...block,
         parentId: null,
+      },
+    },
+  };
+}
+
+export function moveBlockToPosition(
+  layout: TemplateLayout,
+  activeId: string,
+  activeParentId: string | null,
+  targetParentId: string | null,
+  targetIndex: number,
+): TemplateLayout {
+  const activeSiblings = getChildBlockIds(layout, activeParentId);
+  const activeIndex = activeSiblings.indexOf(activeId);
+
+  if (activeIndex === -1) {
+    return layout;
+  }
+
+  const nextActiveSiblings = activeSiblings.filter((id) => id !== activeId);
+  let nextLayout = updateParentChildren(layout, activeParentId, nextActiveSiblings);
+
+  const targetSiblings = getChildBlockIds(nextLayout, targetParentId);
+  const normalizedTargetIndex = Math.max(0, Math.min(targetIndex, targetSiblings.length));
+  const nextTargetSiblings = [...targetSiblings];
+  nextTargetSiblings.splice(normalizedTargetIndex, 0, activeId);
+
+  nextLayout = updateParentChildren(nextLayout, targetParentId, nextTargetSiblings);
+
+  return {
+    ...nextLayout,
+    blocks: {
+      ...nextLayout.blocks,
+      [activeId]: {
+        ...nextLayout.blocks[activeId],
+        parentId: targetParentId,
       },
     },
   };
@@ -114,23 +169,7 @@ export function moveBlock(
     return updateParentChildren(layout, activeParentId, nextSiblings);
   }
 
-  const nextActiveSiblings = activeSiblings.filter((id) => id !== activeId);
-  const nextOverSiblings = [...overSiblings];
-  nextOverSiblings.splice(overIndex, 0, activeId);
-
-  let nextLayout = updateParentChildren(layout, activeParentId, nextActiveSiblings);
-  nextLayout = updateParentChildren(nextLayout, overParentId, nextOverSiblings);
-
-  return {
-    ...nextLayout,
-    blocks: {
-      ...nextLayout.blocks,
-      [activeId]: {
-        ...nextLayout.blocks[activeId],
-        parentId: overParentId,
-      },
-    },
-  };
+  return moveBlockToPosition(layout, activeId, activeParentId, overParentId, overIndex);
 }
 
 export function updateBlockLabel(
@@ -223,6 +262,30 @@ export function updateBlockSize(
       [blockId]: {
         ...block,
         size: normalizedSize,
+      },
+    },
+  };
+}
+
+export function updateBlockStyle(
+  layout: TemplateLayout,
+  blockId: string,
+  nextStyle: TemplateBlockStyle,
+): TemplateLayout {
+  const block = layout.blocks[blockId];
+  if (!block) {
+    return layout;
+  }
+
+  const normalizedStyle = normalizeBlockStyle(nextStyle);
+
+  return {
+    ...layout,
+    blocks: {
+      ...layout.blocks,
+      [blockId]: {
+        ...block,
+        style: normalizedStyle,
       },
     },
   };
@@ -346,4 +409,69 @@ function normalizeBlockSize(size: TemplateBlockSize): TemplateBlockSize | undefi
   }
 
   return Object.keys(normalizedSize).length > 0 ? normalizedSize : undefined;
+}
+
+function normalizeBlockStyle(style: TemplateBlockStyle): TemplateBlockStyle | undefined {
+  const normalizedStyle: TemplateBlockStyle = {};
+
+  if (typeof style.gap === "number" && Number.isFinite(style.gap) && style.gap >= 0) {
+    normalizedStyle.gap = style.gap;
+  }
+
+  if (style.backgroundColor?.trim()) {
+    normalizedStyle.backgroundColor = style.backgroundColor.trim();
+  }
+
+  if (style.textColor?.trim()) {
+    normalizedStyle.textColor = style.textColor.trim();
+  }
+
+  if (style.textAlign) {
+    normalizedStyle.textAlign = style.textAlign;
+  }
+
+  if (typeof style.borderRadius === "number" && Number.isFinite(style.borderRadius) && style.borderRadius >= 0) {
+    normalizedStyle.borderRadius = style.borderRadius;
+  }
+
+  if (style.borderColor?.trim()) {
+    normalizedStyle.borderColor = style.borderColor.trim();
+  }
+
+  if (typeof style.borderWidth === "number" && Number.isFinite(style.borderWidth) && style.borderWidth >= 0) {
+    normalizedStyle.borderWidth = style.borderWidth;
+  }
+
+  if (style.padding) {
+    const padding = normalizeSpacing(style.padding);
+    if (padding) {
+      normalizedStyle.padding = padding;
+    }
+  }
+
+  if (style.margin) {
+    const margin = normalizeSpacing(style.margin);
+    if (margin) {
+      normalizedStyle.margin = margin;
+    }
+  }
+
+  return Object.keys(normalizedStyle).length > 0 ? normalizedStyle : undefined;
+}
+
+function normalizeSpacing(spacing: NonNullable<TemplateBlockStyle["padding"]>) {
+  const normalizedSpacing = {
+    top: normalizeOptionalSpacing(spacing.top),
+    right: normalizeOptionalSpacing(spacing.right),
+    bottom: normalizeOptionalSpacing(spacing.bottom),
+    left: normalizeOptionalSpacing(spacing.left),
+  };
+
+  return Object.values(normalizedSpacing).some((value) => value !== undefined)
+    ? normalizedSpacing
+    : undefined;
+}
+
+function normalizeOptionalSpacing(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }

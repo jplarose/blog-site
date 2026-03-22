@@ -1,11 +1,10 @@
 import type { LayoutTemplate, PostTemplateContent, TemplateSummary } from "@/lib/template-schema";
 
 export const API_BASE_URL = "";
-const SERVER_BACKEND_API_BASE_URL =
-  process.env.API_BASE_URL ??
-  process.env.BLOG_API_URL ??
-  process.env.NEXT_PUBLIC_API_URL ??
-  "http://localhost:5000";
+const SERVER_APP_BASE_URL =
+  process.env.APP_BASE_URL ??
+  process.env.NEXT_PUBLIC_APP_URL ??
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
 
 export type PostStatus = "Draft" | "Scheduled" | "Published" | "Archived";
 
@@ -82,9 +81,9 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     typeof window === "undefined"
       ? new URL(
           path,
-          SERVER_BACKEND_API_BASE_URL.endsWith("/")
-            ? SERVER_BACKEND_API_BASE_URL
-            : `${SERVER_BACKEND_API_BASE_URL}/`,
+          SERVER_APP_BASE_URL.endsWith("/")
+            ? SERVER_APP_BASE_URL
+            : `${SERVER_APP_BASE_URL}/`,
         ).toString()
       : `${API_BASE_URL}${path}`;
 

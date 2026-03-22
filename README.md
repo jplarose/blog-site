@@ -70,7 +70,7 @@ See [`sql/README.md`](sql/README.md) for full documentation.
 
 ```bash
 cd ui-admin
-cp .env.example .env.local   # set NEXT_PUBLIC_API_URL
+cp .env.example .env.local   # set APP_BASE_URL and DOTNET_APP_BASE_URL
 npm install
 npm run dev                  # http://localhost:3000
 ```

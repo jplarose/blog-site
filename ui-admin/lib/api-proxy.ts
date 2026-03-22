@@ -1,8 +1,7 @@
 import "server-only";
 
 const BACKEND_API_BASE_URL =
-  process.env.API_BASE_URL ??
-  process.env.BLOG_API_URL ??
+  process.env.DOTNET_APP_BASE_URL ??
   process.env.NEXT_PUBLIC_API_URL ??
   "http://localhost:5000";
 
