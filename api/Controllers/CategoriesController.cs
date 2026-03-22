@@ -1,6 +1,8 @@
 using BlogSite.Api.Data;
 using BlogSite.Api.DTOs;
 using BlogSite.Api.Models;
+using BlogSite.Api.Results;
+using BlogSite.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,9 +10,12 @@ namespace BlogSite.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class CategoriesController(BlogDbContext db) : ControllerBase
+public class CategoriesController(
+    BlogDbContext db,
+    CategoryService categoryService) : ControllerBase
 {
     [HttpGet]
+    [ProducesResponseType(typeof(IEnumerable<CategoryDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<CategoryDto>>> GetCategories()
     {
         var categories = await db.Categories
@@ -23,65 +28,63 @@ public class CategoriesController(BlogDbContext db) : ControllerBase
     }
 
     [HttpGet("{id:int}")]
-    public async Task<ActionResult<CategoryDto>> GetCategory(int id)
+    [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<CategoryDto>> GetCategory(int id, CancellationToken cancellationToken)
     {
         var category = await db.Categories
             .Include(c => c.DefaultTemplate)
             .Include(c => c.Posts)
-            .FirstOrDefaultAsync(c => c.Id == id);
+            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
 
         return category is null ? NotFound() : Ok(ToDto(category));
     }
 
     [HttpPost]
-    public async Task<ActionResult<CategoryDto>> CreateCategory([FromBody] CreateCategoryRequest request)
+    [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<CategoryDto>> CreateCategory(
+        [FromBody] CreateCategoryRequest request,
+        CancellationToken cancellationToken)
     {
-        var category = new Category
+        var result = await categoryService.CreateAsync(request, cancellationToken);
+        if (result.IsFailure)
         {
-            Name = request.Name,
-            Slug = request.Slug,
-            Description = request.Description,
-            DefaultTemplateId = request.DefaultTemplateId
-        };
+            return MapFailure<CategoryDto>(result);
+        }
 
-        db.Categories.Add(category);
-        await db.SaveChangesAsync();
-
-        await db.Entry(category).Reference(c => c.DefaultTemplate).LoadAsync();
-
-        return CreatedAtAction(nameof(GetCategory), new { id = category.Id }, ToDto(category));
+        return CreatedAtAction(nameof(GetCategory), new { id = result.Value!.Id }, ToDto(result.Value!));
     }
 
     [HttpPut("{id:int}")]
-    public async Task<ActionResult<CategoryDto>> UpdateCategory(int id, [FromBody] UpdateCategoryRequest request)
+    [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<CategoryDto>> UpdateCategory(
+        int id,
+        [FromBody] UpdateCategoryRequest request,
+        CancellationToken cancellationToken)
     {
-        var category = await db.Categories
-            .Include(c => c.DefaultTemplate)
-            .Include(c => c.Posts)
-            .FirstOrDefaultAsync(c => c.Id == id);
+        var result = await categoryService.UpdateAsync(id, request, cancellationToken);
+        if (result.IsFailure)
+        {
+            return MapFailure<CategoryDto>(result);
+        }
 
-        if (category is null) return NotFound();
-
-        category.Name = request.Name;
-        category.Slug = request.Slug;
-        category.Description = request.Description;
-        category.DefaultTemplateId = request.DefaultTemplateId;
-        category.UpdatedAt = DateTime.UtcNow;
-
-        await db.SaveChangesAsync();
-
-        await db.Entry(category).Reference(c => c.DefaultTemplate).LoadAsync();
-
-        return Ok(ToDto(category));
+        return Ok(ToDto(result.Value!));
     }
 
     [HttpDelete("{id:int}")]
-    public async Task<IActionResult> DeleteCategory(int id)
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteCategory(int id, CancellationToken cancellationToken)
     {
-        var category = await db.Categories.FindAsync(id);
-        if (category is null) return NotFound();
-        db.Categories.Remove(category);
-        await db.SaveChangesAsync();
+        var result = await categoryService.DeleteAsync(id, cancellationToken);
+        if (result.IsFailure)
+        {
+            return MapFailure(result);
+        }
+
         return NoContent();
     }
 
@@ -90,4 +93,20 @@ public class CategoriesController(BlogDbContext db) : ControllerBase
         c.DefaultTemplateId, c.DefaultTemplate?.Name,
         c.Posts.Count, c.CreatedAt, c.UpdatedAt
     );
+
+    private ActionResult<T> MapFailure<T>(Result result) =>
+        result.Error?.Code switch
+        {
+            "category.not_found" => NotFound(result.Error.Message),
+            "category.name_required" => BadRequest(result.Error.Message),
+            "category.slug_required" => BadRequest(result.Error.Message),
+            _ => BadRequest(result.Error?.Message ?? "The request could not be completed.")
+        };
+
+    private IActionResult MapFailure(Result result) =>
+        result.Error?.Code switch
+        {
+            "category.not_found" => NotFound(result.Error.Message),
+            _ => BadRequest(result.Error?.Message ?? "The request could not be completed.")
+        };
 }

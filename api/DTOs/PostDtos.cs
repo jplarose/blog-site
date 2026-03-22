@@ -1,4 +1,11 @@
+using System.Text.Json;
+
 namespace BlogSite.Api.DTOs;
+
+public record PostTemplateContentDto(
+    int TemplateId,
+    IReadOnlyDictionary<string, JsonElement> Values
+);
 
 public record PostDto(
     int Id,
@@ -14,6 +21,7 @@ public record PostDto(
     string? CategoryName,
     int? TemplateId,
     string? TemplateName,
+    PostTemplateContentDto? TemplateContent,
     IEnumerable<string> Tags,
     DateTime CreatedAt,
     DateTime UpdatedAt
@@ -30,6 +38,8 @@ public record PostSummaryDto(
     DateTime? ScheduledAt,
     int? CategoryId,
     string? CategoryName,
+    int? TemplateId,
+    string? TemplateName,
     IEnumerable<string> Tags,
     DateTime CreatedAt,
     DateTime UpdatedAt
@@ -45,7 +55,8 @@ public record CreatePostRequest(
     DateTime? ScheduledAt,
     int? CategoryId,
     int? TemplateId,
-    IEnumerable<int> TagIds
+    PostTemplateContentDto? TemplateContent,
+    IEnumerable<string> Tags
 );
 
 public record UpdatePostRequest(
@@ -58,5 +69,6 @@ public record UpdatePostRequest(
     DateTime? ScheduledAt,
     int? CategoryId,
     int? TemplateId,
-    IEnumerable<int> TagIds
+    PostTemplateContentDto? TemplateContent,
+    IEnumerable<string> Tags
 );

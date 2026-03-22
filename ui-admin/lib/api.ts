@@ -1,6 +1,11 @@
 import type { LayoutTemplate, PostTemplateContent, TemplateSummary } from "@/lib/template-schema";
 
 export const API_BASE_URL = "";
+const SERVER_BACKEND_API_BASE_URL =
+  process.env.API_BASE_URL ??
+  process.env.BLOG_API_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  "http://localhost:5000";
 
 export type PostStatus = "Draft" | "Scheduled" | "Published" | "Archived";
 
@@ -73,7 +78,17 @@ export interface AnalyticsSummary {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const requestUrl =
+    typeof window === "undefined"
+      ? new URL(
+          path,
+          SERVER_BACKEND_API_BASE_URL.endsWith("/")
+            ? SERVER_BACKEND_API_BASE_URL
+            : `${SERVER_BACKEND_API_BASE_URL}/`,
+        ).toString()
+      : `${API_BASE_URL}${path}`;
+
+  const res = await fetch(requestUrl, {
     headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,
   });

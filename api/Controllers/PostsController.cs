@@ -1,6 +1,8 @@
 using BlogSite.Api.Data;
 using BlogSite.Api.DTOs;
 using BlogSite.Api.Models;
+using BlogSite.Api.Results;
+using BlogSite.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,9 +10,12 @@ namespace BlogSite.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class PostsController(BlogDbContext db) : ControllerBase
+public class PostsController(
+    BlogDbContext db,
+    PostService postService) : ControllerBase
 {
     [HttpGet]
+    [ProducesResponseType(typeof(IEnumerable<PostSummaryDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<PostSummaryDto>>> GetPosts(
         [FromQuery] string? status,
         [FromQuery] int? categoryId,
@@ -20,6 +25,7 @@ public class PostsController(BlogDbContext db) : ControllerBase
     {
         var query = db.Posts
             .Include(p => p.Category)
+            .Include(p => p.Template)
             .Include(p => p.PostTags).ThenInclude(pt => pt.Tag)
             .AsQueryable();
 
@@ -45,139 +51,102 @@ public class PostsController(BlogDbContext db) : ControllerBase
     }
 
     [HttpGet("{id:int}")]
-    public async Task<ActionResult<PostDto>> GetPost(int id)
+    [ProducesResponseType(typeof(PostDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<PostDto>> GetPost(int id, CancellationToken cancellationToken)
     {
         var post = await db.Posts
             .Include(p => p.Category)
             .Include(p => p.Template)
             .Include(p => p.PostTags).ThenInclude(pt => pt.Tag)
-            .FirstOrDefaultAsync(p => p.Id == id);
+            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
 
         return post is null ? NotFound() : Ok(ToDto(post));
     }
 
     [HttpGet("slug/{slug}")]
-    public async Task<ActionResult<PostDto>> GetPostBySlug(string slug)
+    [ProducesResponseType(typeof(PostDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<PostDto>> GetPostBySlug(string slug, CancellationToken cancellationToken)
     {
         var post = await db.Posts
             .Include(p => p.Category)
             .Include(p => p.Template)
             .Include(p => p.PostTags).ThenInclude(pt => pt.Tag)
-            .FirstOrDefaultAsync(p => p.Slug == slug);
+            .FirstOrDefaultAsync(p => p.Slug == slug, cancellationToken);
 
         return post is null ? NotFound() : Ok(ToDto(post));
     }
 
     [HttpPost]
-    public async Task<ActionResult<PostDto>> CreatePost([FromBody] CreatePostRequest request)
+    [ProducesResponseType(typeof(PostDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PostDto>> CreatePost(
+        [FromBody] CreatePostRequest request,
+        CancellationToken cancellationToken)
     {
-        if (!Enum.TryParse<PostStatus>(request.Status, true, out var status))
-            return BadRequest("Invalid status value.");
-
-        var post = new Post
+        var result = await postService.CreateAsync(request, cancellationToken);
+        if (result.IsFailure)
         {
-            Title = request.Title,
-            Slug = request.Slug,
-            Content = request.Content,
-            Excerpt = request.Excerpt,
-            FeaturedImageUrl = request.FeaturedImageUrl,
-            Status = status,
-            ScheduledAt = request.ScheduledAt,
-            CategoryId = request.CategoryId,
-            TemplateId = request.TemplateId,
-            PublishedAt = status == PostStatus.Published ? DateTime.UtcNow : null
-        };
+            return MapFailure<PostDto>(result);
+        }
 
-        db.Posts.Add(post);
-        await db.SaveChangesAsync();
-
-        foreach (var tagId in request.TagIds)
-            db.PostTags.Add(new PostTag { PostId = post.Id, TagId = tagId });
-
-        await db.SaveChangesAsync();
-
-        await db.Entry(post).Reference(p => p.Category).LoadAsync();
-        await db.Entry(post).Reference(p => p.Template).LoadAsync();
-        await db.Entry(post).Collection(p => p.PostTags).Query()
-            .Include(pt => pt.Tag).LoadAsync();
-
-        return CreatedAtAction(nameof(GetPost), new { id = post.Id }, ToDto(post));
+        var (post, templateContent) = result.Value!;
+        return CreatedAtAction(nameof(GetPost), new { id = post.Id }, ToDto(post, templateContent));
     }
 
     [HttpPut("{id:int}")]
-    public async Task<ActionResult<PostDto>> UpdatePost(int id, [FromBody] UpdatePostRequest request)
+    [ProducesResponseType(typeof(PostDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<PostDto>> UpdatePost(
+        int id,
+        [FromBody] UpdatePostRequest request,
+        CancellationToken cancellationToken)
     {
-        var post = await db.Posts
-            .Include(p => p.PostTags)
-            .FirstOrDefaultAsync(p => p.Id == id);
+        var result = await postService.UpdateAsync(id, request, cancellationToken);
+        if (result.IsFailure)
+        {
+            return MapFailure<PostDto>(result);
+        }
 
-        if (post is null) return NotFound();
-
-        if (!Enum.TryParse<PostStatus>(request.Status, true, out var status))
-            return BadRequest("Invalid status value.");
-
-        post.Title = request.Title;
-        post.Slug = request.Slug;
-        post.Content = request.Content;
-        post.Excerpt = request.Excerpt;
-        post.FeaturedImageUrl = request.FeaturedImageUrl;
-        post.ScheduledAt = request.ScheduledAt;
-        post.CategoryId = request.CategoryId;
-        post.TemplateId = request.TemplateId;
-        post.UpdatedAt = DateTime.UtcNow;
-
-        if (status == PostStatus.Published && post.Status != PostStatus.Published)
-            post.PublishedAt = DateTime.UtcNow;
-
-        post.Status = status;
-
-        db.PostTags.RemoveRange(post.PostTags);
-        foreach (var tagId in request.TagIds)
-            db.PostTags.Add(new PostTag { PostId = post.Id, TagId = tagId });
-
-        await db.SaveChangesAsync();
-
-        await db.Entry(post).Reference(p => p.Category).LoadAsync();
-        await db.Entry(post).Reference(p => p.Template).LoadAsync();
-        await db.Entry(post).Collection(p => p.PostTags).Query()
-            .Include(pt => pt.Tag).LoadAsync();
-
-        return Ok(ToDto(post));
+        var (post, templateContent) = result.Value!;
+        return Ok(ToDto(post, templateContent));
     }
 
     [HttpDelete("{id:int}")]
-    public async Task<IActionResult> DeletePost(int id)
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeletePost(int id, CancellationToken cancellationToken)
     {
-        var post = await db.Posts.FindAsync(id);
-        if (post is null) return NotFound();
-        db.Posts.Remove(post);
-        await db.SaveChangesAsync();
+        var result = await postService.DeleteAsync(id, cancellationToken);
+        if (result.IsFailure)
+        {
+            return MapFailure(result);
+        }
+
         return NoContent();
     }
 
     [HttpPost("{id:int}/publish")]
-    public async Task<ActionResult<PostDto>> PublishPost(int id)
+    [ProducesResponseType(typeof(PostDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<PostDto>> PublishPost(int id, CancellationToken cancellationToken)
     {
-        var post = await db.Posts
-            .Include(p => p.Category)
-            .Include(p => p.Template)
-            .Include(p => p.PostTags).ThenInclude(pt => pt.Tag)
-            .FirstOrDefaultAsync(p => p.Id == id);
+        var result = await postService.PublishAsync(id, cancellationToken);
+        if (result.IsFailure)
+        {
+            return MapFailure<PostDto>(result);
+        }
 
-        if (post is null) return NotFound();
-
-        post.Status = PostStatus.Published;
-        post.PublishedAt = DateTime.UtcNow;
-        post.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync();
-
-        return Ok(ToDto(post));
+        return Ok(ToDto(result.Value!));
     }
 
-    private static PostDto ToDto(Post p) => new(
+    private PostDto ToDto(Post p, PostTemplateContentDto? templateContent = null) => new(
         p.Id, p.Title, p.Slug, p.Content, p.Excerpt, p.FeaturedImageUrl,
         p.Status.ToString(), p.PublishedAt, p.ScheduledAt,
         p.CategoryId, p.Category?.Name, p.TemplateId, p.Template?.Name,
+        templateContent ?? TemplateJsonSerializer.DeserializeTemplateContent(p.TemplateContentJson),
         p.PostTags.Select(pt => pt.Tag.Name),
         p.CreatedAt, p.UpdatedAt
     );
@@ -185,8 +154,23 @@ public class PostsController(BlogDbContext db) : ControllerBase
     private static PostSummaryDto ToSummaryDto(Post p) => new(
         p.Id, p.Title, p.Slug, p.Excerpt, p.FeaturedImageUrl,
         p.Status.ToString(), p.PublishedAt, p.ScheduledAt,
-        p.CategoryId, p.Category?.Name,
+        p.CategoryId, p.Category?.Name, p.TemplateId, p.Template?.Name,
         p.PostTags.Select(pt => pt.Tag.Name),
         p.CreatedAt, p.UpdatedAt
     );
+
+    private ActionResult<T> MapFailure<T>(Result result) =>
+        result.Error?.Code switch
+        {
+            "post.not_found" => NotFound(result.Error.Message),
+            "post.invalid_status" => BadRequest(result.Error.Message),
+            _ => BadRequest(result.Error?.Message ?? "The request could not be completed.")
+        };
+
+    private IActionResult MapFailure(Result result) =>
+        result.Error?.Code switch
+        {
+            "post.not_found" => NotFound(result.Error.Message),
+            _ => BadRequest(result.Error?.Message ?? "The request could not be completed.")
+        };
 }

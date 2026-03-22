@@ -4,7 +4,7 @@
 -- ============================================================
 -- Default layout template
 -- ============================================================
-INSERT INTO layout_templates (name, description, html_structure, css_styles, is_default)
+INSERT INTO layout_templates (name, description, html_structure, css_styles, layout_json, is_default)
 VALUES (
     'Default',
     'The default blog post layout with header, content, and footer.',
@@ -37,6 +37,12 @@ VALUES (
 .post-content pre { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 0.375rem; overflow-x: auto; }
 .post-content code { font-family: monospace; }
 .post-content img { max-width: 100%; height: auto; border-radius: 0.25rem; }',
+    '{
+      "version": 1,
+      "canvas": { "width": 960, "minRowHeight": 120, "backgroundColor": "#ffffff" },
+      "rootBlockIds": [],
+      "blocks": {}
+    }'::jsonb,
     TRUE
 )
 ON CONFLICT DO NOTHING;

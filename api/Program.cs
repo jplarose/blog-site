@@ -1,4 +1,5 @@
 using BlogSite.Api.Data;
+using BlogSite.Api.Services;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -6,6 +7,9 @@ var builder = WebApplication.CreateBuilder(args);
 // Database
 builder.Services.AddDbContext<BlogDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+builder.Services.AddScoped<LayoutTemplateService>();
+builder.Services.AddScoped<CategoryService>();
+builder.Services.AddScoped<PostService>();
 
 // Controllers & OpenAPI
 builder.Services.AddControllers();
