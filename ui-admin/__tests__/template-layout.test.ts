@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { getContentBlocksInOrder, insertBlock, moveBlock } from "@/lib/template-layout";
+import {
+  getContentBlocksInOrder,
+  insertBlock,
+  moveBlock,
+  updateBlockSize,
+} from "@/lib/template-layout";
 import type { TemplateLayout } from "@/lib/template-schema";
 
 function createLayout(): TemplateLayout {
@@ -106,5 +111,83 @@ describe("template-layout helpers", () => {
     expect(movedLayout.blocks["image-a"]?.parentId).toBeNull();
     expect(movedLayout.rootBlockIds).toContain("image-a");
     expect(movedLayout.blocks["container-a"]?.kind).toBe("container");
+  });
+
+  it("appends a block into an empty container drop zone", () => {
+    const layout = createLayout();
+    const insertedLayout = insertBlock(
+      layout,
+      {
+        id: "container-b",
+        kind: "container",
+        label: "Container B",
+        parentId: null,
+        children: [],
+        props: { direction: "column" },
+      },
+      null,
+    );
+
+    const movedLayout = moveBlock(
+      insertedLayout,
+      "title-b",
+      null,
+      null,
+      "container-b",
+    );
+
+    expect(movedLayout.blocks["title-b"]?.parentId).toBe("container-b");
+    expect(movedLayout.blocks["container-b"]?.kind).toBe("container");
+    expect(movedLayout.blocks["container-b"]?.children).toEqual(["title-b"]);
+    expect(movedLayout.rootBlockIds).toEqual(["container-a", "container-b"]);
+  });
+
+  it("appends a nested block back to the root drop zone", () => {
+    const layout = createLayout();
+
+    const movedLayout = moveBlock(
+      layout,
+      "image-a",
+      null,
+      "container-a",
+      null,
+    );
+
+    expect(movedLayout.blocks["image-a"]?.parentId).toBeNull();
+    expect(movedLayout.rootBlockIds).toEqual(["container-a", "title-b", "image-a"]);
+    expect(movedLayout.blocks["container-a"]?.children).toEqual(["rich-text-a"]);
+  });
+
+  it("stores explicit block sizing values for preview rendering", () => {
+    const layout = createLayout();
+
+    const sizedLayout = updateBlockSize(layout, "title-b", {
+      widthMode: "fixed",
+      widthValue: 480,
+      minHeight: 220,
+      maxWidth: 640,
+    });
+
+    expect(sizedLayout.blocks["title-b"]?.size).toEqual({
+      widthMode: "fixed",
+      widthValue: 480,
+      minHeight: 220,
+      maxWidth: 640,
+    });
+  });
+
+  it("removes empty sizing values instead of persisting invalid numbers", () => {
+    const layout = createLayout();
+
+    const sizedLayout = updateBlockSize(layout, "title-b", {
+      widthMode: "fraction",
+      widthValue: 0,
+      minHeight: -20,
+      maxWidth: Number.NaN,
+    });
+
+    expect(sizedLayout.blocks["title-b"]?.size).toEqual({
+      widthMode: "fraction",
+    });
   });
 });

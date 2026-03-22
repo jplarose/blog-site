@@ -1,15 +1,33 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { templatesApi } from "@/lib/api";
 import { createEmptyTemplateLayout, createTemplateBlock } from "@/lib/template-defaults";
-import { insertBlock } from "@/lib/template-layout";
-import type { LayoutTemplate, TemplateBlockKind, TemplateLayout } from "@/lib/template-schema";
+import { insertBlock, updateBlockSize } from "@/lib/template-layout";
+import type {
+  LayoutTemplate,
+  TemplateBlockKind,
+  TemplateBlockSize,
+  TemplateLayout,
+  TemplateWidthMode,
+} from "@/lib/template-schema";
 import TemplateCanvasPreview from "@/components/template-editor/TemplateCanvasPreview";
-import TemplateStructureEditor from "@/components/template-editor/TemplateStructureEditor";
+
+const TemplateStructureEditor = dynamic(
+  () => import("@/components/template-editor/TemplateStructureEditor"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+        Loading structure editor…
+      </div>
+    ),
+  },
+);
 
 type TabType = "canvas" | "json";
 
@@ -40,6 +58,7 @@ export default function TemplateEditorForm({
     initialTemplate?.layout ?? createEmptyTemplateLayout(),
   );
   const [selectedParentId, setSelectedParentId] = useState<string | null>(null);
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -81,6 +100,25 @@ export default function TemplateEditorForm({
   const pageTitle = mode === "edit" ? "Edit Template" : "New Template";
   const primaryActionLabel =
     mode === "edit" ? (isSaving ? "Saving..." : "Update Template") : isSaving ? "Saving..." : "Save Template";
+  const selectedBlock = selectedBlockId ? layout.blocks[selectedBlockId] : null;
+
+  function handleBlockSizeChange(field: keyof TemplateBlockSize, value?: number | TemplateWidthMode) {
+    if (!selectedBlockId) {
+      return;
+    }
+
+    const nextSize: TemplateBlockSize = {
+      ...(selectedBlock?.size ?? {}),
+    };
+
+    if (value === undefined || value === "") {
+      delete nextSize[field];
+    } else {
+      nextSize[field] = value as never;
+    }
+
+    setLayout((currentLayout) => updateBlockSize(currentLayout, selectedBlockId, nextSize));
+  }
 
   return (
     <div className="space-y-6">
@@ -179,6 +217,89 @@ export default function TemplateEditorForm({
               <p>Root blocks: {layout.rootBlockIds.length}</p>
             </div>
 
+            <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
+              <p className="font-medium text-gray-900">Block Sizing</p>
+              {selectedBlock ? (
+                <div className="mt-3 space-y-3">
+                  <p className="text-xs uppercase tracking-[0.16em] text-gray-400">
+                    {selectedBlock.label} · {selectedBlock.kind}
+                  </p>
+
+                  <label className="block space-y-1">
+                    <span className="text-xs font-medium text-gray-500">Width Mode</span>
+                    <select
+                      value={selectedBlock.size?.widthMode ?? ""}
+                      onChange={(event) =>
+                        handleBlockSizeChange(
+                          "widthMode",
+                          (event.target.value || undefined) as TemplateWidthMode | undefined,
+                        )
+                      }
+                      className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      <option value="">Auto</option>
+                      <option value="full">Full Width</option>
+                      <option value="fixed">Fixed Pixels</option>
+                      <option value="fraction">Percentage</option>
+                    </select>
+                  </label>
+
+                  <label className="block space-y-1">
+                    <span className="text-xs font-medium text-gray-500">
+                      {selectedBlock.size?.widthMode === "fraction" ? "Width Percentage" : "Width Value"}
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={selectedBlock.size?.widthMode === "fraction" ? 100 : undefined}
+                      value={selectedBlock.size?.widthValue ?? ""}
+                      onChange={(event) =>
+                        handleBlockSizeChange("widthValue", parseOptionalNumber(event.target.value))
+                      }
+                      className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      placeholder={
+                        selectedBlock.size?.widthMode === "fraction" ? "e.g. 50" : "e.g. 320"
+                      }
+                    />
+                  </label>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium text-gray-500">Min Height</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={selectedBlock.size?.minHeight ?? ""}
+                        onChange={(event) =>
+                          handleBlockSizeChange("minHeight", parseOptionalNumber(event.target.value))
+                        }
+                        className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        placeholder="e.g. 180"
+                      />
+                    </label>
+
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium text-gray-500">Max Width</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={selectedBlock.size?.maxWidth ?? ""}
+                        onChange={(event) =>
+                          handleBlockSizeChange("maxWidth", parseOptionalNumber(event.target.value))
+                        }
+                        className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        placeholder="e.g. 720"
+                      />
+                    </label>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-gray-500">
+                  Select a block in the structure panel to control its width and height.
+                </p>
+              )}
+            </div>
+
             {saveError ? (
               <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
                 {saveError}
@@ -208,12 +329,23 @@ export default function TemplateEditorForm({
             <TemplateStructureEditor
               layout={layout}
               selectedParentId={selectedParentId}
+              selectedBlockId={selectedBlockId}
               onLayoutChange={setLayout}
               onSelectParent={setSelectedParentId}
+              onSelectBlock={setSelectedBlockId}
             />
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+function parseOptionalNumber(value: string) {
+  if (!value.trim()) {
+    return undefined;
+  }
+
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : undefined;
 }

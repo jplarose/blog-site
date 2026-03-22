@@ -5,6 +5,7 @@ import type {
   ContainerTemplateBlock,
   GalleryTemplateBlock,
   ImageTemplateBlock,
+  TemplateBlockSize,
   TemplateBlock,
   TemplateLayout,
   TitleTemplateBlock,
@@ -90,16 +91,21 @@ export function getContentBlocksInOrder(layout: TemplateLayout): TemplateContent
 export function moveBlock(
   layout: TemplateLayout,
   activeId: string,
-  overId: string,
+  overId: string | null,
   activeParentId: string | null,
   overParentId: string | null,
 ): TemplateLayout {
   const activeSiblings = getChildBlockIds(layout, activeParentId);
   const overSiblings = getChildBlockIds(layout, overParentId);
   const activeIndex = activeSiblings.indexOf(activeId);
-  const overIndex = overSiblings.indexOf(overId);
 
-  if (activeIndex === -1 || overIndex === -1) {
+  if (activeIndex === -1) {
+    return layout;
+  }
+
+  const overIndex = overId ? overSiblings.indexOf(overId) : overSiblings.length;
+
+  if (overId && overIndex === -1) {
     return layout;
   }
 
@@ -194,6 +200,30 @@ export function updateBlockLabel(
     blocks: {
       ...layout.blocks,
       [blockId]: nextBlock,
+    },
+  };
+}
+
+export function updateBlockSize(
+  layout: TemplateLayout,
+  blockId: string,
+  nextSize: TemplateBlockSize,
+): TemplateLayout {
+  const block = layout.blocks[blockId];
+  if (!block) {
+    return layout;
+  }
+
+  const normalizedSize = normalizeBlockSize(nextSize);
+
+  return {
+    ...layout,
+    blocks: {
+      ...layout.blocks,
+      [blockId]: {
+        ...block,
+        size: normalizedSize,
+      },
     },
   };
 }
@@ -294,4 +324,26 @@ function updateParentChildren(
       },
     },
   };
+}
+
+function normalizeBlockSize(size: TemplateBlockSize): TemplateBlockSize | undefined {
+  const normalizedSize: TemplateBlockSize = {};
+
+  if (size.widthMode) {
+    normalizedSize.widthMode = size.widthMode;
+  }
+
+  if (typeof size.widthValue === "number" && Number.isFinite(size.widthValue) && size.widthValue > 0) {
+    normalizedSize.widthValue = size.widthValue;
+  }
+
+  if (typeof size.minHeight === "number" && Number.isFinite(size.minHeight) && size.minHeight > 0) {
+    normalizedSize.minHeight = size.minHeight;
+  }
+
+  if (typeof size.maxWidth === "number" && Number.isFinite(size.maxWidth) && size.maxWidth > 0) {
+    normalizedSize.maxWidth = size.maxWidth;
+  }
+
+  return Object.keys(normalizedSize).length > 0 ? normalizedSize : undefined;
 }
