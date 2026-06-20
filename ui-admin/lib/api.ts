@@ -1,4 +1,10 @@
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
+import type { LayoutTemplate, PostTemplateContent, TemplateSummary } from "@/lib/template-schema";
+
+export const API_BASE_URL = "";
+const SERVER_APP_BASE_URL =
+  process.env.APP_BASE_URL ??
+  process.env.NEXT_PUBLIC_APP_URL ??
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
 
 export type PostStatus = "Draft" | "Scheduled" | "Published" | "Archived";
 
@@ -7,6 +13,7 @@ export interface Post {
   title: string;
   slug: string;
   content: string;
+  templateContent?: PostTemplateContent;
   excerpt?: string;
   featuredImageUrl?: string;
   status: PostStatus;
@@ -32,6 +39,8 @@ export interface PostSummary {
   scheduledAt?: string;
   categoryId?: number;
   categoryName?: string;
+  templateId?: number;
+  templateName?: string;
   tags: string[];
   createdAt: string;
   updatedAt: string;
@@ -57,17 +66,6 @@ export interface Tag {
   createdAt: string;
 }
 
-export interface LayoutTemplate {
-  id: number;
-  name: string;
-  description: string;
-  htmlStructure: string;
-  cssStyles: string;
-  isDefault: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface AnalyticsSummary {
   totalPageViews: number;
   uniqueVisitors: number;
@@ -79,7 +77,17 @@ export interface AnalyticsSummary {
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const requestUrl =
+    typeof window === "undefined"
+      ? new URL(
+          path,
+          SERVER_APP_BASE_URL.endsWith("/")
+            ? SERVER_APP_BASE_URL
+            : `${SERVER_APP_BASE_URL}/`,
+        ).toString()
+      : `${API_BASE_URL}${path}`;
+
+  const res = await fetch(requestUrl, {
     headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,
   });
@@ -131,7 +139,7 @@ export const tagsApi = {
 
 // ---- Templates ----
 export const templatesApi = {
-  list: () => apiFetch<LayoutTemplate[]>("/api/layouttemplates"),
+  list: () => apiFetch<TemplateSummary[]>("/api/layouttemplates"),
   get: (id: number) => apiFetch<LayoutTemplate>(`/api/layouttemplates/${id}`),
   create: (data: unknown) =>
     apiFetch<LayoutTemplate>("/api/layouttemplates", { method: "POST", body: JSON.stringify(data) }),

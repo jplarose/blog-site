@@ -9,3 +9,6 @@ Each of the components should be relatively simple components to keep the overhe
 
 ## Testing
 There needs to be testing implemented for this task that verifies that a saved layout is rendered the same each time it is loaded and that the rendered layout matches the layout that was saved.
+
+## Output
+- Keep note of the dotnet api backend calls we will need to create, create the stubs that will call them in this UI project and create and maintain a separate markdown document that tracks the controllers, endpoints, and dto contracts that will be required as well as what consumes them in this ui app.

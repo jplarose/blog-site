@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace BlogSite.Api.Models;
 
 public enum PostStatus
@@ -21,6 +23,7 @@ public class Post
     public DateTime? ScheduledAt { get; set; }
     public int? CategoryId { get; set; }
     public int? TemplateId { get; set; }
+    public JsonDocument? TemplateContentJson { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

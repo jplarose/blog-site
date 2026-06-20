@@ -2,6 +2,13 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+Set these environment variables for local admin development:
+
+```bash
+APP_BASE_URL=http://localhost:3000
+DOTNET_APP_BASE_URL=http://localhost:5017
+```
+
 First, run the development server:
 
 ```bash

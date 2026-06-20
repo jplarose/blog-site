@@ -24,3 +24,55 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.tiptap-editor {
+  min-height: 18rem;
+  padding: 1rem;
+  outline: none;
+  color: #111827;
+}
+
+.tiptap-editor p.is-editor-empty:first-child::before {
+  color: #9ca3af;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+.tiptap-editor p {
+  margin: 0 0 0.875rem;
+}
+
+.tiptap-editor ul,
+.tiptap-editor ol,
+.rte-content ul,
+.rte-content ol {
+  margin: 0.75rem 0;
+  padding-left: 1.5rem;
+}
+
+.rte-content p {
+  margin: 0 0 0.875rem;
+}
+
+.rte-content a {
+  color: #4f46e5;
+  text-decoration: underline;
+}
+
+.spoiler {
+  border-radius: 0.25rem;
+  background: #111827;
+  color: #111827;
+  cursor: pointer;
+  padding: 0 0.15rem;
+}
+
+.spoiler--revealed {
+  border-radius: 0.25rem;
+  background: #e5e7eb;
+  color: #111827;
+  cursor: pointer;
+  padding: 0 0.15rem;
+}
