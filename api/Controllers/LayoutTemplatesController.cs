@@ -1,41 +1,44 @@
-using BlogSite.Api.Data;
 using BlogSite.Api.DTOs;
-using BlogSite.Api.Models;
+using BlogSite.Api.Repositories;
 using BlogSite.Api.Results;
 using BlogSite.Api.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace BlogSite.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
 public class LayoutTemplatesController(
-    BlogDbContext db,
+    ILayoutTemplateRepository templates,
     LayoutTemplateService layoutTemplateService) : ControllerBase
 {
+    /// <summary>Gets all layout templates and their usage counts.</summary>
+    /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet]
-    [ProducesResponseType(typeof(IEnumerable<LayoutTemplateSummaryDto>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<IEnumerable<LayoutTemplateSummaryDto>>> GetTemplates()
-    {
-        var templates = await db.LayoutTemplates
-            .Include(t => t.Categories)
-            .Include(t => t.Posts)
-            .OrderBy(t => t.Name)
-            .ToListAsync();
+    [ProducesResponseType(
+        typeof(IEnumerable<LayoutTemplateSummaryDto>),
+        StatusCodes.Status200OK)]
+    public async Task<ActionResult<IEnumerable<LayoutTemplateSummaryDto>>> GetTemplates(
+        CancellationToken cancellationToken) =>
+        Ok(await templates.GetAllAsync(cancellationToken));
 
-        return Ok(templates.Select(ToSummaryDto));
-    }
-
+    /// <summary>Gets a layout template by identifier.</summary>
+    /// <param name="id">Template identifier.</param>
+    /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet("{id:int}")]
     [ProducesResponseType(typeof(LayoutTemplateDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<LayoutTemplateDto>> GetTemplate(int id, CancellationToken cancellationToken)
+    public async Task<ActionResult<LayoutTemplateDto>> GetTemplate(
+        int id,
+        CancellationToken cancellationToken)
     {
-        var template = await db.LayoutTemplates.FindAsync([id], cancellationToken);
-        return template is null ? NotFound() : Ok(ToDto(template));
+        var template = await templates.GetByIdAsync(id, cancellationToken);
+        return template is null ? NotFound() : Ok(template);
     }
 
+    /// <summary>Creates a layout template.</summary>
+    /// <param name="request">Template values.</param>
+    /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpPost]
     [ProducesResponseType(typeof(LayoutTemplateDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -44,14 +47,18 @@ public class LayoutTemplatesController(
         CancellationToken cancellationToken)
     {
         var result = await layoutTemplateService.CreateAsync(request, cancellationToken);
-        if (result.IsFailure)
-        {
-            return MapFailure<LayoutTemplateDto>(result);
-        }
-
-        return CreatedAtAction(nameof(GetTemplate), new { id = result.Value!.Id }, ToDto(result.Value!));
+        return result.IsFailure
+            ? MapFailure<LayoutTemplateDto>(result)
+            : CreatedAtAction(
+                nameof(GetTemplate),
+                new { id = result.Value!.Id },
+                result.Value);
     }
 
+    /// <summary>Updates a layout template.</summary>
+    /// <param name="id">Template identifier.</param>
+    /// <param name="request">Updated template values.</param>
+    /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpPut("{id:int}")]
     [ProducesResponseType(typeof(LayoutTemplateDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -62,37 +69,24 @@ public class LayoutTemplatesController(
         CancellationToken cancellationToken)
     {
         var result = await layoutTemplateService.UpdateAsync(id, request, cancellationToken);
-        if (result.IsFailure)
-        {
-            return MapFailure<LayoutTemplateDto>(result);
-        }
-
-        return Ok(ToDto(result.Value!));
+        return result.IsFailure
+            ? MapFailure<LayoutTemplateDto>(result)
+            : Ok(result.Value);
     }
 
+    /// <summary>Deletes a layout template.</summary>
+    /// <param name="id">Template identifier.</param>
+    /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpDelete("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> DeleteTemplate(int id, CancellationToken cancellationToken)
+    public async Task<IActionResult> DeleteTemplate(
+        int id,
+        CancellationToken cancellationToken)
     {
         var result = await layoutTemplateService.DeleteAsync(id, cancellationToken);
-        if (result.IsFailure)
-        {
-            return MapFailure(result);
-        }
-
-        return NoContent();
+        return result.IsFailure ? MapFailure(result) : NoContent();
     }
-
-    private static LayoutTemplateSummaryDto ToSummaryDto(LayoutTemplate t) => new(
-        t.Id, t.Name, t.Description,
-        t.IsDefault, t.Categories.Count, t.Posts.Count, t.CreatedAt, t.UpdatedAt
-    );
-
-    private static LayoutTemplateDto ToDto(LayoutTemplate t) => new(
-        t.Id, t.Name, t.Description, TemplateJsonSerializer.DeserializeLayout(t.LayoutJson),
-        t.IsDefault, t.CreatedAt, t.UpdatedAt
-    );
 
     private ActionResult<T> MapFailure<T>(Result result) =>
         result.Error?.Code switch

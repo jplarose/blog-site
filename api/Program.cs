@@ -1,15 +1,20 @@
-using BlogSite.Api.Data;
+using BlogSite.Api.Extensions;
+using BlogSite.Api.Repositories;
 using BlogSite.Api.Services;
-using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Database
-builder.Services.AddDbContext<BlogDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+builder.Services.AddPostgres(builder.Configuration);
+builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();
+builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
+builder.Services.AddScoped<ILayoutTemplateRepository, LayoutTemplateRepository>();
+builder.Services.AddScoped<IPostRepository, PostRepository>();
+builder.Services.AddScoped<ITagRepository, TagRepository>();
 builder.Services.AddScoped<LayoutTemplateService>();
 builder.Services.AddScoped<CategoryService>();
 builder.Services.AddScoped<PostService>();
+builder.Services.AddScoped<TagService>();
 
 // Controllers & OpenAPI
 builder.Services.AddControllers();

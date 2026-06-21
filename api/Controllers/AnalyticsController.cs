@@ -1,72 +1,43 @@
-using BlogSite.Api.Data;
 using BlogSite.Api.DTOs;
-using BlogSite.Api.Models;
+using BlogSite.Api.Repositories;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace BlogSite.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class AnalyticsController(BlogDbContext db) : ControllerBase
+public class AnalyticsController(IAnalyticsRepository analytics) : ControllerBase
 {
+    /// <summary>Gets aggregate analytics for the requested number of days.</summary>
+    /// <param name="days">Number of days to include. Defaults to 30.</param>
+    /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet("summary")]
+    [ProducesResponseType(typeof(AnalyticsSummaryDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<AnalyticsSummaryDto>> GetSummary(
-        [FromQuery] int days = 30)
+        [FromQuery] int days = 30,
+        CancellationToken cancellationToken = default)
     {
         var since = DateTime.UtcNow.AddDays(-days);
-
-        var totalViews = await db.PageViews
-            .Where(pv => pv.ViewedAt >= since)
-            .CountAsync();
-
-        var uniqueVisitors = await db.PageViews
-            .Where(pv => pv.ViewedAt >= since && pv.IpAddress != null)
-            .Select(pv => pv.IpAddress)
-            .Distinct()
-            .CountAsync();
-
-        var totalPosts = await db.Posts.CountAsync();
-        var publishedPosts = await db.Posts.CountAsync(p => p.Status == PostStatus.Published);
-        var draftPosts = await db.Posts.CountAsync(p => p.Status == PostStatus.Draft);
-
-        var topPosts = await db.PageViews
-            .Where(pv => pv.PostId != null && pv.ViewedAt >= since)
-            .GroupBy(pv => pv.PostId)
-            .Select(g => new { PostId = g.Key!.Value, ViewCount = g.Count() })
-            .OrderByDescending(x => x.ViewCount)
-            .Take(10)
-            .Join(db.Posts, x => x.PostId, p => p.Id,
-                (x, p) => new TopPostDto(p.Id, p.Title, p.Slug, x.ViewCount))
-            .ToListAsync();
-
-        var dailyViews = await db.PageViews
-            .Where(pv => pv.ViewedAt >= since)
-            .GroupBy(pv => pv.ViewedAt.Date)
-            .Select(g => new DailyViewDto(DateOnly.FromDateTime(g.Key), g.Count()))
-            .OrderBy(d => d.Date)
-            .ToListAsync();
-
-        return Ok(new AnalyticsSummaryDto(
-            totalViews, uniqueVisitors, totalPosts,
-            publishedPosts, draftPosts, topPosts, dailyViews
-        ));
+        return Ok(await analytics.GetSummaryAsync(since, cancellationToken));
     }
 
+    /// <summary>Records a page view for analytics reporting.</summary>
+    /// <param name="request">Page-view details.</param>
+    /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpPost("pageview")]
-    public async Task<IActionResult> RecordPageView([FromBody] RecordPageViewRequest request)
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> RecordPageView(
+        [FromBody] RecordPageViewRequest request,
+        CancellationToken cancellationToken)
     {
-        var pageView = new PageView
-        {
-            PostId = request.PostId,
-            Path = request.Path,
-            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
-            UserAgent = Request.Headers.UserAgent.ToString(),
-            Referrer = request.Referrer
-        };
+        await analytics.RecordPageViewAsync(
+            request.PostId,
+            request.Path,
+            HttpContext.Connection.RemoteIpAddress?.ToString(),
+            Request.Headers.UserAgent.ToString(),
+            request.Referrer,
+            cancellationToken);
 
-        db.PageViews.Add(pageView);
-        await db.SaveChangesAsync();
         return Ok();
     }
 }
