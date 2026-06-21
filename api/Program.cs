@@ -1,4 +1,5 @@
 using BlogSite.Api.Data;
+using BlogSite.Api.Repositories;
 using BlogSite.Api.Services;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -16,9 +17,15 @@ builder.Services.AddScoped<IDbConnection>(services =>
     services.GetRequiredService<NpgsqlDataSource>().CreateConnection());
 builder.Services.AddDbContext<BlogDbContext>(options =>
     options.UseNpgsql(connectionString));
+builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();
+builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
+builder.Services.AddScoped<ILayoutTemplateRepository, LayoutTemplateRepository>();
+builder.Services.AddScoped<IPostRepository, PostRepository>();
+builder.Services.AddScoped<ITagRepository, TagRepository>();
 builder.Services.AddScoped<LayoutTemplateService>();
 builder.Services.AddScoped<CategoryService>();
 builder.Services.AddScoped<PostService>();
+builder.Services.AddScoped<TagService>();
 
 // Controllers & OpenAPI
 builder.Services.AddControllers();

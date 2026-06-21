@@ -1,45 +1,42 @@
-using BlogSite.Api.Data;
 using BlogSite.Api.DTOs;
-using BlogSite.Api.Models;
+using BlogSite.Api.Repositories;
 using BlogSite.Api.Results;
 using BlogSite.Api.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace BlogSite.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
 public class CategoriesController(
-    BlogDbContext db,
+    ICategoryRepository categories,
     CategoryService categoryService) : ControllerBase
 {
+    /// <summary>Gets all categories and their post counts.</summary>
+    /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet]
     [ProducesResponseType(typeof(IEnumerable<CategoryDto>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<IEnumerable<CategoryDto>>> GetCategories()
-    {
-        var categories = await db.Categories
-            .Include(c => c.DefaultTemplate)
-            .Include(c => c.Posts)
-            .OrderBy(c => c.Name)
-            .ToListAsync();
+    public async Task<ActionResult<IEnumerable<CategoryDto>>> GetCategories(
+        CancellationToken cancellationToken) =>
+        Ok(await categories.GetAllAsync(cancellationToken));
 
-        return Ok(categories.Select(ToDto));
-    }
-
+    /// <summary>Gets a category by identifier.</summary>
+    /// <param name="id">Category identifier.</param>
+    /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet("{id:int}")]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<CategoryDto>> GetCategory(int id, CancellationToken cancellationToken)
+    public async Task<ActionResult<CategoryDto>> GetCategory(
+        int id,
+        CancellationToken cancellationToken)
     {
-        var category = await db.Categories
-            .Include(c => c.DefaultTemplate)
-            .Include(c => c.Posts)
-            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
-
-        return category is null ? NotFound() : Ok(ToDto(category));
+        var category = await categories.GetByIdAsync(id, cancellationToken);
+        return category is null ? NotFound() : Ok(category);
     }
 
+    /// <summary>Creates a category.</summary>
+    /// <param name="request">Category values.</param>
+    /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpPost]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -48,14 +45,18 @@ public class CategoriesController(
         CancellationToken cancellationToken)
     {
         var result = await categoryService.CreateAsync(request, cancellationToken);
-        if (result.IsFailure)
-        {
-            return MapFailure<CategoryDto>(result);
-        }
-
-        return CreatedAtAction(nameof(GetCategory), new { id = result.Value!.Id }, ToDto(result.Value!));
+        return result.IsFailure
+            ? MapFailure<CategoryDto>(result)
+            : CreatedAtAction(
+                nameof(GetCategory),
+                new { id = result.Value!.Id },
+                result.Value);
     }
 
+    /// <summary>Updates a category.</summary>
+    /// <param name="id">Category identifier.</param>
+    /// <param name="request">Updated category values.</param>
+    /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpPut("{id:int}")]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -66,33 +67,24 @@ public class CategoriesController(
         CancellationToken cancellationToken)
     {
         var result = await categoryService.UpdateAsync(id, request, cancellationToken);
-        if (result.IsFailure)
-        {
-            return MapFailure<CategoryDto>(result);
-        }
-
-        return Ok(ToDto(result.Value!));
+        return result.IsFailure
+            ? MapFailure<CategoryDto>(result)
+            : Ok(result.Value);
     }
 
+    /// <summary>Deletes a category.</summary>
+    /// <param name="id">Category identifier.</param>
+    /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpDelete("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> DeleteCategory(int id, CancellationToken cancellationToken)
+    public async Task<IActionResult> DeleteCategory(
+        int id,
+        CancellationToken cancellationToken)
     {
         var result = await categoryService.DeleteAsync(id, cancellationToken);
-        if (result.IsFailure)
-        {
-            return MapFailure(result);
-        }
-
-        return NoContent();
+        return result.IsFailure ? MapFailure(result) : NoContent();
     }
-
-    private static CategoryDto ToDto(Category c) => new(
-        c.Id, c.Name, c.Slug, c.Description,
-        c.DefaultTemplateId, c.DefaultTemplate?.Name,
-        c.Posts.Count, c.CreatedAt, c.UpdatedAt
-    );
 
     private ActionResult<T> MapFailure<T>(Result result) =>
         result.Error?.Code switch

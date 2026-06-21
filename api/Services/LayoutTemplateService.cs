@@ -1,95 +1,66 @@
-using BlogSite.Api.Data;
 using BlogSite.Api.DTOs;
-using BlogSite.Api.Models;
+using BlogSite.Api.Repositories;
 using BlogSite.Api.Results;
-using Microsoft.EntityFrameworkCore;
+
 namespace BlogSite.Api.Services;
 
-public class LayoutTemplateService(BlogDbContext db)
+public class LayoutTemplateService(ILayoutTemplateRepository templates)
 {
-    public async Task<Result<LayoutTemplate>> CreateAsync(
+    public async Task<Result<LayoutTemplateDto>> CreateAsync(
         CreateLayoutTemplateRequest request,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
         {
-            return Result<LayoutTemplate>.Failure("template.name_required", "Template name is required.");
+            return Result<LayoutTemplateDto>.Failure(
+                "template.name_required",
+                "Template name is required.");
         }
 
-        if (request.IsDefault)
-        {
-            var existingDefaults = await db.LayoutTemplates
-                .Where(template => template.IsDefault)
-                .ToListAsync(cancellationToken);
+        var template = await templates.CreateAsync(
+            request.Name.Trim(),
+            request.Description,
+            request.Layout,
+            request.IsDefault,
+            cancellationToken);
 
-            foreach (var existingDefault in existingDefaults)
-            {
-                existingDefault.IsDefault = false;
-            }
-        }
-
-        var template = new LayoutTemplate
-        {
-            Name = request.Name.Trim(),
-            Description = request.Description,
-            LayoutJson = TemplateJsonSerializer.SerializeLayout(request.Layout),
-            IsDefault = request.IsDefault
-        };
-
-        db.LayoutTemplates.Add(template);
-        await db.SaveChangesAsync(cancellationToken);
-
-        return Result<LayoutTemplate>.Success(template);
+        return Result<LayoutTemplateDto>.Success(template);
     }
 
-    public async Task<Result<LayoutTemplate>> UpdateAsync(
+    public async Task<Result<LayoutTemplateDto>> UpdateAsync(
         int id,
         UpdateLayoutTemplateRequest request,
         CancellationToken cancellationToken)
     {
-        var template = await db.LayoutTemplates.FindAsync([id], cancellationToken);
-        if (template is null)
-        {
-            return Result<LayoutTemplate>.Failure("template.not_found", "Template was not found.");
-        }
-
         if (string.IsNullOrWhiteSpace(request.Name))
         {
-            return Result<LayoutTemplate>.Failure("template.name_required", "Template name is required.");
+            return Result<LayoutTemplateDto>.Failure(
+                "template.name_required",
+                "Template name is required.");
         }
 
-        if (request.IsDefault && !template.IsDefault)
-        {
-            var existingDefaults = await db.LayoutTemplates
-                .Where(existingTemplate => existingTemplate.IsDefault && existingTemplate.Id != id)
-                .ToListAsync(cancellationToken);
+        var template = await templates.UpdateAsync(
+            id,
+            request.Name.Trim(),
+            request.Description,
+            request.Layout,
+            request.IsDefault,
+            cancellationToken);
 
-            foreach (var existingDefault in existingDefaults)
-            {
-                existingDefault.IsDefault = false;
-            }
-        }
-
-        template.Name = request.Name.Trim();
-        template.Description = request.Description;
-        template.LayoutJson = TemplateJsonSerializer.SerializeLayout(request.Layout);
-        template.IsDefault = request.IsDefault;
-        template.UpdatedAt = DateTime.UtcNow;
-
-        await db.SaveChangesAsync(cancellationToken);
-        return Result<LayoutTemplate>.Success(template);
+        return template is null
+            ? Result<LayoutTemplateDto>.Failure(
+                "template.not_found",
+                "Template was not found.")
+            : Result<LayoutTemplateDto>.Success(template);
     }
 
-    public async Task<Result> DeleteAsync(int id, CancellationToken cancellationToken)
+    public async Task<Result> DeleteAsync(
+        int id,
+        CancellationToken cancellationToken)
     {
-        var template = await db.LayoutTemplates.FindAsync([id], cancellationToken);
-        if (template is null)
-        {
-            return Result.Failure("template.not_found", "Template was not found.");
-        }
-
-        db.LayoutTemplates.Remove(template);
-        await db.SaveChangesAsync(cancellationToken);
-        return Result.Success();
+        var deleted = await templates.DeleteAsync(id, cancellationToken);
+        return deleted
+            ? Result.Success()
+            : Result.Failure("template.not_found", "Template was not found.");
     }
 }
