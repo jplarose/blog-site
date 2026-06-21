@@ -1,12 +1,21 @@
 using BlogSite.Api.Data;
 using BlogSite.Api.Services;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
+using System.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Database
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException(
+        "The ConnectionStrings:DefaultConnection configuration value is required.");
+
+builder.Services.AddSingleton(NpgsqlDataSource.Create(connectionString));
+builder.Services.AddScoped<IDbConnection>(services =>
+    services.GetRequiredService<NpgsqlDataSource>().CreateConnection());
 builder.Services.AddDbContext<BlogDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseNpgsql(connectionString));
 builder.Services.AddScoped<LayoutTemplateService>();
 builder.Services.AddScoped<CategoryService>();
 builder.Services.AddScoped<PostService>();
