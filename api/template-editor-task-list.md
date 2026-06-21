@@ -26,7 +26,7 @@ The request is to align the .NET API with the template editor contract in [ui-ad
 
 - **Assigned Agent(s):** PostgreSQL / DB Operations Expert, Clean C# / .NET Backend Engineer
 - **Goal:** Replace the current template storage shape with a backend-safe JSON layout model and add storage for post-level template content and any counts or relationships needed by the new endpoints.
-- **Likely files/areas touched:** `/home/jlarose/Dev/Blog-site/sql/migrations/001_initial_schema.sql`, `/home/jlarose/Dev/Blog-site/sql/seeds/001_seed_data.sql`, `/home/jlarose/Dev/Blog-site/api/Models/LayoutTemplate.cs`, `/home/jlarose/Dev/Blog-site/api/Models/Post.cs`, `/home/jlarose/Dev/Blog-site/api/Data/BlogDbContext.cs`
+- **Likely files/areas touched:** `/home/jlarose/Dev/Blog-site/sql/migrations/001_initial_schema.sql`, `/home/jlarose/Dev/Blog-site/sql/seeds/001_seed_data.sql`, `/home/jlarose/Dev/Blog-site/api/Repositories/LayoutTemplateRepository.cs`, `/home/jlarose/Dev/Blog-site/api/Repositories/PostRepository.cs`
 - **Acceptance criteria:** Schema supports saving `TemplateLayout` as JSON and post template content as JSON; foreign keys for category default templates and post template assignment remain valid; seed data matches the new column model; API models/data access can read and write the new structure cleanly.
 - **Dependencies:** Task 1
 - **Risks / unknowns:** Whether to store layout/content as `jsonb` blobs only or split any searchable fields; whether `content` on posts remains alongside `template_content` or becomes optional legacy data.

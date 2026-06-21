@@ -6,7 +6,7 @@ A full-stack blog platform with a public-facing site, an admin dashboard, a .NET
 
 ```
 blog-site/
-├── api/          # .NET 10 Web API (ASP.NET Core + Entity Framework Core + Npgsql/PostgreSQL)
+├── api/          # .NET 10 Web API (ASP.NET Core + Dapper + Npgsql/PostgreSQL)
 ├── sql/          # PostgreSQL schema migrations and seed data
 ├── ui-admin/     # Next.js 16 + TypeScript admin dashboard
 └── ui-site/      # Next.js 16 + TypeScript public blog site
@@ -16,7 +16,7 @@ blog-site/
 
 ## `/api` — .NET 10 Web API
 
-**Tech stack:** ASP.NET Core 10 · Entity Framework Core 10 · Npgsql (PostgreSQL) · JWT Bearer Authentication
+**Tech stack:** ASP.NET Core 10 · Dapper · Npgsql (PostgreSQL) · JWT Bearer Authentication
 
 ### Features
 - CRUD endpoints for **Posts**, **Categories**, **Tags**, and **Layout Templates**

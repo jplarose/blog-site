@@ -1,5 +1,5 @@
 using BlogSite.Api.DTOs;
-using BlogSite.Api.Models;
+using BlogSite.Api.Domain;
 using BlogSite.Api.Repositories;
 using BlogSite.Api.Results;
 using System.Text.RegularExpressions;
