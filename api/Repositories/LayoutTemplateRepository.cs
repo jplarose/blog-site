@@ -171,9 +171,15 @@ public sealed class LayoutTemplateRepository(IDbConnection db) : ILayoutTemplate
             cancellationToken: cancellationToken);
 
         var updated = await db.ExecuteAsync(command);
+        if (updated == 0)
+        {
+            transaction.Rollback();
+            return null;
+        }
+
         transaction.Commit();
 
-        return updated == 0 ? null : await GetByIdAsync(id, cancellationToken);
+        return await GetByIdAsync(id, cancellationToken);
     }
 
     public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken)

@@ -50,6 +50,23 @@ public class PostServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_TagsWithSameSlug_WriteOneAssociation()
+    {
+        var repository = new FakePostRepository
+        {
+            CreateResult = PostDto()
+        };
+        var service = new PostService(repository);
+
+        await service.CreateAsync(
+            CreateRequest(tags: ["C#", "C++"]),
+            CancellationToken.None);
+
+        var tag = Assert.Single(repository.CreatedPost!.Tags);
+        Assert.Equal("c", tag.Slug);
+    }
+
+    [Fact]
     public async Task UpdateAsync_MissingPost_ReturnsNotFound()
     {
         var repository = new FakePostRepository();

@@ -75,6 +75,8 @@ public class PostService(IPostRepository posts)
             .Where(tag => !string.IsNullOrWhiteSpace(tag))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Select(tag => new PostTagWrite(tag, SlugifyTag(tag)))
+            .GroupBy(tag => tag.Slug, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
             .ToList();
 
     private static PostWrite ToPostWrite(

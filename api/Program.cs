@@ -10,7 +10,7 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
     ?? throw new InvalidOperationException(
         "The ConnectionStrings:DefaultConnection configuration value is required.");
 
-builder.Services.AddSingleton(NpgsqlDataSource.Create(connectionString));
+builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
 builder.Services.AddScoped<IDbConnection>(services =>
     services.GetRequiredService<NpgsqlDataSource>().CreateConnection());
 builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();

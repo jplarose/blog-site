@@ -385,18 +385,26 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
             transaction,
             cancellationToken: cancellationToken));
 
-        const string upsertTagSql = """
-            INSERT INTO tags (
-                name,
-                slug
+        const string resolveTagSql = """
+            WITH inserted AS (
+                INSERT INTO tags (
+                    name,
+                    slug
+                )
+                VALUES (
+                    @Name,
+                    @Slug
+                )
+                ON CONFLICT (slug) DO NOTHING
+                RETURNING id
             )
-            VALUES (
-                @Name,
-                @Slug
-            )
-            ON CONFLICT (slug)
-            DO UPDATE SET name = EXCLUDED.name
-            RETURNING id;
+            SELECT id
+            FROM inserted
+            UNION ALL
+            SELECT id
+            FROM tags
+            WHERE slug = @Slug
+            LIMIT 1;
             """;
 
         const string insertPostTagSql = """
@@ -414,7 +422,7 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
         foreach (var tag in tags)
         {
             var tagId = await db.QuerySingleAsync<int>(new CommandDefinition(
-                upsertTagSql,
+                resolveTagSql,
                 tag,
                 transaction,
                 cancellationToken: cancellationToken));
