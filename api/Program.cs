@@ -1,18 +1,11 @@
+using BlogSite.Api.Extensions;
 using BlogSite.Api.Repositories;
 using BlogSite.Api.Services;
-using Npgsql;
-using System.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Database
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? throw new InvalidOperationException(
-        "The ConnectionStrings:DefaultConnection configuration value is required.");
-
-builder.Services.AddSingleton(_ => NpgsqlDataSource.Create(connectionString));
-builder.Services.AddScoped<IDbConnection>(services =>
-    services.GetRequiredService<NpgsqlDataSource>().CreateConnection());
+builder.Services.AddPostgres(builder.Configuration);
 builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
 builder.Services.AddScoped<ILayoutTemplateRepository, LayoutTemplateRepository>();
