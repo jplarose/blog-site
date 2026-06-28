@@ -6,6 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Database
 builder.Services.AddPostgres(builder.Configuration);
+builder.Services.AddImageStorage(builder.Configuration);
 builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
 builder.Services.AddScoped<ILayoutTemplateRepository, LayoutTemplateRepository>();
