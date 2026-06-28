@@ -61,8 +61,15 @@ async function buildRequestBody(request: Request) {
     return undefined;
   }
 
-  const body = await request.text();
-  return body.length > 0 ? body : undefined;
+  const contentType = request.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/json")) {
+    const body = await request.text();
+    return body.length > 0 ? body : undefined;
+  }
+
+  const body = await request.arrayBuffer();
+  return body.byteLength > 0 ? body : undefined;
 }
 
 export async function proxyApiRequest(request: Request, path: string) {

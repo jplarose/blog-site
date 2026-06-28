@@ -34,6 +34,17 @@ dotnet run
 # OpenAPI docs: http://localhost:5000/openapi/v1.json
 ```
 
+### SeaweedFS image storage
+
+Configure the API's `SeaweedFiler` section:
+
+- `PrivateBaseUrl`: internal Filer upload endpoint
+- `PublicBaseUrl`: browser-accessible media origin
+- `PathPrefix`: object namespace, default `images`
+
+The admin UI uploads through the .NET API; it does not connect to SeaweedFS
+directly.
+
 ---
 
 ## `/sql` — Database Schema

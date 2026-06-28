@@ -76,6 +76,10 @@ export interface AnalyticsSummary {
   dailyViews: { date: string; viewCount: number }[];
 }
 
+export interface MediaUpload {
+  url: string;
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const requestUrl =
     typeof window === "undefined"
@@ -155,4 +159,26 @@ export const analyticsApi = {
     apiFetch<AnalyticsSummary>(`/api/analytics/summary?days=${days}`),
   recordPageView: (data: unknown) =>
     apiFetch<void>("/api/analytics/pageview", { method: "POST", body: JSON.stringify(data) }),
+};
+
+// ---- Media ----
+export const mediaApi = {
+  uploadImage: async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch("/api/media/images", {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response
+        .json()
+        .catch(() => ({ message: "Image upload failed." }));
+      throw new Error(error.message ?? "Image upload failed.");
+    }
+
+    return response.json() as Promise<MediaUpload>;
+  },
 };
