@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using BlogSite.Api.Options;
+using BlogSite.Api.Services;
 using BlogSite.Api.Storage;
 
 namespace BlogSite.Api.Extensions;
@@ -31,6 +32,7 @@ public static partial class AddImageStorageExtension
             .ValidateOnStart();
 
         services.AddHttpClient<IImageStore, SeaweedFilerImageStore>();
+        services.AddScoped<MediaService>();
         return services;
     }
 
