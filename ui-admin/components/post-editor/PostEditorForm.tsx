@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import ImageUploadControl from "@/components/media/ImageUploadControl";
 import RichTextContent from "@/components/rte/RichTextContent";
 import RichTextEditor from "@/components/rte/RichTextEditor";
 import TemplateCanvasPreview from "@/components/template-editor/TemplateCanvasPreview";
@@ -190,12 +191,15 @@ export default function PostEditorForm({
     });
   }
 
-  function addTemplateGalleryItem(bindingKey: string) {
+  function addTemplateGalleryItem(
+    bindingKey: string,
+    uploadedUrl: string,
+  ) {
     setTemplateContentValues((currentValues) => ({
       ...currentValues,
       [bindingKey]: [
         ...asGalleryValue(currentValues[bindingKey]),
-        { id: crypto.randomUUID(), url: "", alt: "", caption: "" },
+        { id: crypto.randomUUID(), url: uploadedUrl, alt: "", caption: "" },
       ],
     }));
   }
@@ -478,6 +482,7 @@ export default function PostEditorForm({
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">Layout Template</label>
               <select
+                aria-label="Layout Template"
                 value={selectedTemplateId}
                 onChange={(event) => setSelectedTemplateId(event.target.value)}
                 disabled={isOrganizationLoading}
@@ -503,12 +508,10 @@ export default function PostEditorForm({
 
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5 space-y-3">
             <h2 className="font-semibold text-gray-900">Featured Image</h2>
-            <input
-              type="url"
+            <ImageUploadControl
+              label="Featured image"
               value={featuredImageUrl}
-              onChange={(event) => setFeaturedImageUrl(event.target.value)}
-              placeholder="https://example.com/image.jpg"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              onUploaded={setFeaturedImageUrl}
             />
           </div>
         </div>
@@ -531,7 +534,10 @@ interface TemplateContentFieldProps {
     itemId: string,
     updater: (currentItem: TemplateGalleryItemValue) => TemplateGalleryItemValue,
   ) => void;
-  onGalleryItemAdd: (bindingKey: string) => void;
+  onGalleryItemAdd: (
+    bindingKey: string,
+    uploadedUrl: string,
+  ) => void;
   onGalleryItemRemove: (bindingKey: string, itemId: string) => void;
 }
 
@@ -576,17 +582,15 @@ function TemplateContentField({
     return (
       <div className="space-y-3 rounded-xl border border-gray-200 p-4">
         <label className="block text-sm font-medium text-gray-900">{block.label}</label>
-        <input
-          type="url"
+        <ImageUploadControl
+          label={block.label}
           value={imageValue.url}
-          onChange={(event) =>
+          onUploaded={(url) =>
             onImageChange(block.content.key, (currentValue) => ({
               ...currentValue,
-              url: event.target.value,
+              url,
             }))
           }
-          placeholder="https://example.com/image.jpg"
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         />
         <input
           type="text"
@@ -622,29 +626,24 @@ function TemplateContentField({
     <div className="space-y-3 rounded-xl border border-gray-200 p-4">
       <div className="flex items-center justify-between">
         <label className="block text-sm font-medium text-gray-900">{block.label}</label>
-        <button
-          type="button"
-          onClick={() => onGalleryItemAdd(block.content.key)}
-          className="rounded border border-gray-300 px-2 py-1 text-xs text-gray-600"
-        >
-          Add Image
-        </button>
       </div>
+      <ImageUploadControl
+        label={`Add ${block.label} image`}
+        onUploaded={(url) => onGalleryItemAdd(block.content.key, url)}
+      />
 
       {galleryItems.length > 0 ? (
         galleryItems.map((item) => (
           <div key={item.id} className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
-            <input
-              type="url"
+            <ImageUploadControl
+              label={`${block.label} image`}
               value={item.url}
-              onChange={(event) =>
+              onUploaded={(url) =>
                 onGalleryItemChange(block.content.key, item.id, (currentItem) => ({
                   ...currentItem,
-                  url: event.target.value,
+                  url,
                 }))
               }
-              placeholder="https://example.com/image.jpg"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
             <input
               type="text"
