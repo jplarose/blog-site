@@ -44,6 +44,7 @@ public class TagsController(
     [HttpPost]
     [ProducesResponseType(typeof(TagDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TagDto>> CreateTag(
         [FromBody] CreateTagRequest request,
         CancellationToken cancellationToken)
@@ -65,6 +66,7 @@ public class TagsController(
     [ProducesResponseType(typeof(TagDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TagDto>> UpdateTag(
         int id,
         [FromBody] UpdateTagRequest request,
@@ -82,6 +84,7 @@ public class TagsController(
     [HttpDelete("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> DeleteTag(
         int id,
         CancellationToken cancellationToken)
@@ -96,6 +99,9 @@ public class TagsController(
             "tag.not_found" => NotFound(result.Error.Message),
             "tag.name_required" => BadRequest(result.Error.Message),
             "tag.slug_required" => BadRequest(result.Error.Message),
+            "tag.slug_invalid" => BadRequest(result.Error.Message),
+            "tag.duplicate_name" => Conflict(result.Error.Message),
+            "tag.duplicate_slug" => Conflict(result.Error.Message),
             _ => BadRequest(result.Error?.Message ?? "The request could not be completed.")
         };
 
@@ -103,6 +109,7 @@ public class TagsController(
         result.Error?.Code switch
         {
             "tag.not_found" => NotFound(result.Error.Message),
+            "tag.referenced" => Conflict(result.Error.Message),
             _ => BadRequest(result.Error?.Message ?? "The request could not be completed.")
         };
 }

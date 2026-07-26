@@ -58,17 +58,43 @@ internal sealed class FakePostRepository : IPostRepository
 
 internal sealed class FakeCategoryRepository : ICategoryRepository
 {
+    /// <summary>Configurable result returned by <see cref="GetByIdAsync"/>.</summary>
+    public CategoryDto? GetByIdResult { get; set; }
+
+    /// <summary>Configurable result returned by <see cref="NameExistsAsync"/>.</summary>
+    public bool NameExists { get; set; }
+
+    /// <summary>Configurable result returned by <see cref="SlugExistsAsync"/>.</summary>
+    public bool SlugExists { get; set; }
+
+    /// <summary>Configurable result returned by <see cref="UpdateAsync"/>.</summary>
+    public CategoryDto? UpdateResult { get; set; }
+
+    /// <summary>Configurable result returned by <see cref="DeleteAsync"/>.</summary>
+    public bool DeleteResult { get; set; }
+
     public Task<IReadOnlyList<CategoryDto>> GetAllAsync(CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<CategoryDto>>([]);
 
     public Task<CategoryDto?> GetByIdAsync(int id, CancellationToken cancellationToken) =>
-        Task.FromResult<CategoryDto?>(null);
+        Task.FromResult(GetByIdResult);
+
+    public Task<bool> NameExistsAsync(
+        string name,
+        int? excludeId,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(NameExists);
+
+    public Task<bool> SlugExistsAsync(
+        string slug,
+        int? excludeId,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(SlugExists);
 
     public Task<CategoryDto> CreateAsync(
         string name,
         string slug,
         string? description,
-        int? defaultTemplateId,
         CancellationToken cancellationToken) =>
         throw new NotSupportedException("Not needed for auth tests.");
 
@@ -77,21 +103,54 @@ internal sealed class FakeCategoryRepository : ICategoryRepository
         string name,
         string slug,
         string? description,
-        int? defaultTemplateId,
         CancellationToken cancellationToken) =>
-        Task.FromResult<CategoryDto?>(null);
+        Task.FromResult(UpdateResult);
 
     public Task<bool> DeleteAsync(int id, CancellationToken cancellationToken) =>
-        Task.FromResult(false);
+        Task.FromResult(DeleteResult);
 }
 
 internal sealed class FakeTagRepository : ITagRepository
 {
+    /// <summary>Configurable result returned by <see cref="GetByIdAsync"/>.</summary>
+    public TagDto? GetByIdResult { get; set; }
+
+    /// <summary>Configurable result returned by <see cref="NameExistsAsync"/>.</summary>
+    public bool NameExists { get; set; }
+
+    /// <summary>Configurable result returned by <see cref="SlugExistsAsync"/>.</summary>
+    public bool SlugExists { get; set; }
+
+    /// <summary>Configurable result returned by <see cref="UpdateAsync"/>.</summary>
+    public TagDto? UpdateResult { get; set; }
+
+    /// <summary>Configurable result returned by <see cref="DeleteAsync"/>.</summary>
+    public bool DeleteResult { get; set; }
+
+    /// <summary>
+    /// Tag ids treated as existing by <see cref="GetExistingIdsAsync"/>.
+    /// Empty by default, so post-write tag validation fails closed unless a
+    /// test explicitly seeds known ids.
+    /// </summary>
+    public IReadOnlyList<int> ExistingIds { get; set; } = [];
+
     public Task<IReadOnlyList<TagDto>> GetAllAsync(CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<TagDto>>([]);
 
     public Task<TagDto?> GetByIdAsync(int id, CancellationToken cancellationToken) =>
-        Task.FromResult<TagDto?>(null);
+        Task.FromResult(GetByIdResult);
+
+    public Task<bool> NameExistsAsync(
+        string name,
+        int? excludeId,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(NameExists);
+
+    public Task<bool> SlugExistsAsync(
+        string slug,
+        int? excludeId,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(SlugExists);
 
     public Task<TagDto> CreateAsync(string name, string slug, CancellationToken cancellationToken) =>
         throw new NotSupportedException("Not needed for auth tests.");
@@ -101,10 +160,15 @@ internal sealed class FakeTagRepository : ITagRepository
         string name,
         string slug,
         CancellationToken cancellationToken) =>
-        Task.FromResult<TagDto?>(null);
+        Task.FromResult(UpdateResult);
 
     public Task<bool> DeleteAsync(int id, CancellationToken cancellationToken) =>
-        Task.FromResult(false);
+        Task.FromResult(DeleteResult);
+
+    public Task<IReadOnlyList<int>> GetExistingIdsAsync(
+        IReadOnlyList<int> ids,
+        CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<int>>(ids.Where(ExistingIds.Contains).ToList());
 }
 
 internal sealed class FakeLayoutTemplateRepository : ILayoutTemplateRepository

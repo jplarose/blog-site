@@ -44,6 +44,7 @@ public class CategoriesController(
     [HttpPost]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<CategoryDto>> CreateCategory(
         [FromBody] CreateCategoryRequest request,
         CancellationToken cancellationToken)
@@ -65,6 +66,7 @@ public class CategoriesController(
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<CategoryDto>> UpdateCategory(
         int id,
         [FromBody] UpdateCategoryRequest request,
@@ -82,6 +84,7 @@ public class CategoriesController(
     [HttpDelete("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> DeleteCategory(
         int id,
         CancellationToken cancellationToken)
@@ -96,6 +99,9 @@ public class CategoriesController(
             "category.not_found" => NotFound(result.Error.Message),
             "category.name_required" => BadRequest(result.Error.Message),
             "category.slug_required" => BadRequest(result.Error.Message),
+            "category.slug_invalid" => BadRequest(result.Error.Message),
+            "category.duplicate_name" => Conflict(result.Error.Message),
+            "category.duplicate_slug" => Conflict(result.Error.Message),
             _ => BadRequest(result.Error?.Message ?? "The request could not be completed.")
         };
 
@@ -103,6 +109,7 @@ public class CategoriesController(
         result.Error?.Code switch
         {
             "category.not_found" => NotFound(result.Error.Message),
+            "category.referenced" => Conflict(result.Error.Message),
             _ => BadRequest(result.Error?.Message ?? "The request could not be completed.")
         };
 }

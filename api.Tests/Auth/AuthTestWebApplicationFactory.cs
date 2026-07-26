@@ -20,6 +20,10 @@ internal sealed class AuthTestWebApplicationFactory : WebApplicationFactory<Prog
 
     public FakePostRepository PostRepository { get; } = new();
 
+    public FakeCategoryRepository CategoryRepository { get; } = new();
+
+    public FakeTagRepository TagRepository { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
@@ -33,10 +37,10 @@ internal sealed class AuthTestWebApplicationFactory : WebApplicationFactory<Prog
             services.AddSingleton<IPostRepository>(PostRepository);
 
             services.RemoveAll<ICategoryRepository>();
-            services.AddSingleton<ICategoryRepository>(new FakeCategoryRepository());
+            services.AddSingleton<ICategoryRepository>(CategoryRepository);
 
             services.RemoveAll<ITagRepository>();
-            services.AddSingleton<ITagRepository>(new FakeTagRepository());
+            services.AddSingleton<ITagRepository>(TagRepository);
 
             services.RemoveAll<ILayoutTemplateRepository>();
             services.AddSingleton<ILayoutTemplateRepository>(new FakeLayoutTemplateRepository());

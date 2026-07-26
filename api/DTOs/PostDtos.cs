@@ -49,7 +49,7 @@ public record CreatePostRequest(
     DateTime? ScheduledAt,
     int? CategoryId,
     int? TemplateId,
-    IEnumerable<string> Tags
+    IReadOnlyList<int> TagIds
 );
 
 public record UpdatePostRequest(
@@ -62,7 +62,7 @@ public record UpdatePostRequest(
     DateTime? ScheduledAt,
     int? CategoryId,
     int? TemplateId,
-    IEnumerable<string> Tags
+    IReadOnlyList<int> TagIds
 );
 
 /// <summary>

@@ -8,6 +8,14 @@ public interface ITagRepository
 {
     Task<IReadOnlyList<TagDto>> GetAllAsync(CancellationToken cancellationToken);
     Task<TagDto?> GetByIdAsync(int id, CancellationToken cancellationToken);
+    Task<bool> NameExistsAsync(
+        string name,
+        int? excludeId,
+        CancellationToken cancellationToken);
+    Task<bool> SlugExistsAsync(
+        string slug,
+        int? excludeId,
+        CancellationToken cancellationToken);
     Task<TagDto> CreateAsync(
         string name,
         string slug,
@@ -18,6 +26,15 @@ public interface ITagRepository
         string slug,
         CancellationToken cancellationToken);
     Task<bool> DeleteAsync(int id, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns the subset of <paramref name="ids"/> that correspond to
+    /// existing tags, so callers (post writes) can identify any unknown ids
+    /// without upserting new tags on their behalf.
+    /// </summary>
+    Task<IReadOnlyList<int>> GetExistingIdsAsync(
+        IReadOnlyList<int> ids,
+        CancellationToken cancellationToken);
 }
 
 public sealed class TagRepository(IDbConnection db) : ITagRepository
@@ -63,6 +80,50 @@ public sealed class TagRepository(IDbConnection db) : ITagRepository
             cancellationToken: cancellationToken);
 
         return await db.QuerySingleOrDefaultAsync<TagDto>(command);
+    }
+
+    public async Task<bool> NameExistsAsync(
+        string name,
+        int? excludeId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM tags
+                WHERE lower(name) = lower(@Name)
+                    AND (@ExcludeId::int IS NULL OR id <> @ExcludeId)
+            );
+            """;
+
+        var command = new CommandDefinition(
+            sql,
+            new { Name = name, ExcludeId = excludeId },
+            cancellationToken: cancellationToken);
+
+        return await db.ExecuteScalarAsync<bool>(command);
+    }
+
+    public async Task<bool> SlugExistsAsync(
+        string slug,
+        int? excludeId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM tags
+                WHERE slug = @Slug
+                    AND (@ExcludeId::int IS NULL OR id <> @ExcludeId)
+            );
+            """;
+
+        var command = new CommandDefinition(
+            sql,
+            new { Slug = slug, ExcludeId = excludeId },
+            cancellationToken: cancellationToken);
+
+        return await db.ExecuteScalarAsync<bool>(command);
     }
 
     public async Task<TagDto> CreateAsync(
@@ -127,5 +188,29 @@ public sealed class TagRepository(IDbConnection db) : ITagRepository
             cancellationToken: cancellationToken);
 
         return await db.ExecuteAsync(command) > 0;
+    }
+
+    public async Task<IReadOnlyList<int>> GetExistingIdsAsync(
+        IReadOnlyList<int> ids,
+        CancellationToken cancellationToken)
+    {
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        const string sql = """
+            SELECT id
+            FROM tags
+            WHERE id = ANY(@Ids);
+            """;
+
+        var command = new CommandDefinition(
+            sql,
+            new { Ids = ids.ToArray() },
+            cancellationToken: cancellationToken);
+
+        var existingIds = await db.QueryAsync<int>(command);
+        return existingIds.AsList();
     }
 }

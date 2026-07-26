@@ -15,8 +15,6 @@ public sealed record PostPage(
     IReadOnlyList<PostSummaryDto> Posts,
     int TotalCount);
 
-public sealed record PostTagWrite(string Name, string Slug);
-
 public sealed record PostWrite(
     string Title,
     string Slug,
@@ -27,7 +25,7 @@ public sealed record PostWrite(
     DateTime? ScheduledAt,
     int? CategoryId,
     int? TemplateId,
-    IReadOnlyList<PostTagWrite> Tags);
+    IReadOnlyList<int> TagIds);
 
 public interface IPostRepository
 {
@@ -226,7 +224,7 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
             cancellationToken: cancellationToken);
 
         var id = await db.QuerySingleAsync<int>(command);
-        await ReplaceTagsAsync(id, post.Tags, transaction, cancellationToken);
+        await ReplaceTagsAsync(id, post.TagIds, transaction, cancellationToken);
         transaction.Commit();
 
         return (await GetByIdAsync(id, cancellationToken))!;
@@ -276,7 +274,7 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
             return null;
         }
 
-        await ReplaceTagsAsync(id, post.Tags, transaction, cancellationToken);
+        await ReplaceTagsAsync(id, post.TagIds, transaction, cancellationToken);
         transaction.Commit();
 
         return await GetByIdAsync(id, cancellationToken);
@@ -443,9 +441,16 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
         return (await db.QueryAsync<PostTagRow>(command)).AsList();
     }
 
+    /// <summary>
+    /// Links <paramref name="tagIds"/> to <paramref name="postId"/>. This
+    /// only links to existing managed tags by id — it never creates,
+    /// renames, or otherwise upserts tag rows. Callers (see
+    /// <c>PostService</c>) are responsible for validating that every id
+    /// references an existing tag before calling this method.
+    /// </summary>
     private async Task ReplaceTagsAsync(
         int postId,
-        IReadOnlyList<PostTagWrite> tags,
+        IReadOnlyList<int> tagIds,
         IDbTransaction transaction,
         CancellationToken cancellationToken)
     {
@@ -460,54 +465,28 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
             transaction,
             cancellationToken: cancellationToken));
 
-        const string resolveTagSql = """
-            WITH inserted AS (
-                INSERT INTO tags (
-                    name,
-                    slug
-                )
-                VALUES (
-                    @Name,
-                    @Slug
-                )
-                ON CONFLICT (slug) DO NOTHING
-                RETURNING id
-            )
-            SELECT id
-            FROM inserted
-            UNION ALL
-            SELECT id
-            FROM tags
-            WHERE slug = @Slug
-            LIMIT 1;
-            """;
+        if (tagIds.Count == 0)
+        {
+            return;
+        }
 
         const string insertPostTagSql = """
             INSERT INTO post_tags (
                 post_id,
                 tag_id
             )
-            VALUES (
+            SELECT
                 @PostId,
-                @TagId
-            )
+                tag_id
+            FROM UNNEST(@TagIds) AS tag_id
             ON CONFLICT DO NOTHING;
             """;
 
-        foreach (var tag in tags)
-        {
-            var tagId = await db.QuerySingleAsync<int>(new CommandDefinition(
-                resolveTagSql,
-                tag,
-                transaction,
-                cancellationToken: cancellationToken));
-
-            await db.ExecuteAsync(new CommandDefinition(
-                insertPostTagSql,
-                new { PostId = postId, TagId = tagId },
-                transaction,
-                cancellationToken: cancellationToken));
-        }
+        await db.ExecuteAsync(new CommandDefinition(
+            insertPostTagSql,
+            new { PostId = postId, TagIds = tagIds.Distinct().ToArray() },
+            transaction,
+            cancellationToken: cancellationToken));
     }
 
     private static DynamicParameters ToParameters(PostWrite post)

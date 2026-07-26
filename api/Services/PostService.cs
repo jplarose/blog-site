@@ -2,11 +2,13 @@ using BlogSite.Api.DTOs;
 using BlogSite.Api.Domain;
 using BlogSite.Api.Repositories;
 using BlogSite.Api.Results;
-using System.Text.RegularExpressions;
 
 namespace BlogSite.Api.Services;
 
-public class PostService(IPostRepository posts, ILayoutTemplateRepository templates)
+public class PostService(
+    IPostRepository posts,
+    ILayoutTemplateRepository templates,
+    ITagRepository tags)
 {
     public async Task<Result<PostDto>> CreateAsync(
         CreatePostRequest request,
@@ -25,6 +27,12 @@ public class PostService(IPostRepository posts, ILayoutTemplateRepository templa
         if (templateValidation is not null)
         {
             return templateValidation;
+        }
+
+        var tagValidation = await ValidateTagIdsAsync(request.TagIds, cancellationToken);
+        if (tagValidation is not null)
+        {
+            return tagValidation;
         }
 
         var post = await posts.CreateAsync(
@@ -52,6 +60,12 @@ public class PostService(IPostRepository posts, ILayoutTemplateRepository templa
         if (templateValidation is not null)
         {
             return templateValidation;
+        }
+
+        var tagValidation = await ValidateTagIdsAsync(request.TagIds, cancellationToken);
+        if (tagValidation is not null)
+        {
+            return tagValidation;
         }
 
         var post = await posts.UpdateAsync(
@@ -145,16 +159,33 @@ public class PostService(IPostRepository posts, ILayoutTemplateRepository templa
             : Result<PostDto>.Success(post);
     }
 
-    internal static IReadOnlyList<PostTagWrite> NormalizeTags(
-        IEnumerable<string> requestedTags) =>
-        requestedTags
-            .Select(tag => tag.Trim())
-            .Where(tag => !string.IsNullOrWhiteSpace(tag))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Select(tag => new PostTagWrite(tag, SlugifyTag(tag)))
-            .GroupBy(tag => tag.Slug, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.First())
-            .ToList();
+    /// <summary>
+    /// Validates that every requested tag id references an existing,
+    /// managed tag. Post writes reference tags by id only — there is no
+    /// tag-upsert path reachable from post create/update.
+    /// </summary>
+    private async Task<Result<PostDto>?> ValidateTagIdsAsync(
+        IReadOnlyList<int> tagIds,
+        CancellationToken cancellationToken)
+    {
+        if (tagIds.Count == 0)
+        {
+            return null;
+        }
+
+        var requestedIds = tagIds.Distinct().ToList();
+        var existingIds = await tags.GetExistingIdsAsync(requestedIds, cancellationToken);
+        var unknownIds = requestedIds.Except(existingIds).ToList();
+
+        if (unknownIds.Count > 0)
+        {
+            return Result<PostDto>.Failure(
+                "post.tag_invalid",
+                $"TagIds must reference existing tags. Unknown tag id(s): {string.Join(", ", unknownIds)}.");
+        }
+
+        return null;
+    }
 
     private async Task<Result<PostDto>?> ValidateTemplateAsync(
         int? templateId,
@@ -183,7 +214,7 @@ public class PostService(IPostRepository posts, ILayoutTemplateRepository templa
             request.ScheduledAt,
             request.CategoryId,
             request.TemplateId,
-            NormalizeTags(request.Tags ?? []));
+            (request.TagIds ?? []).Distinct().ToList());
 
     private static PostWrite ToPostWrite(
         UpdatePostRequest request,
@@ -198,16 +229,5 @@ public class PostService(IPostRepository posts, ILayoutTemplateRepository templa
             request.ScheduledAt,
             request.CategoryId,
             request.TemplateId,
-            NormalizeTags(request.Tags ?? []));
-
-    private static string SlugifyTag(string value)
-    {
-        var slug = Regex.Replace(
-                value.Trim().ToLowerInvariant(),
-                @"[^a-z0-9]+",
-                "-")
-            .Trim('-');
-
-        return string.IsNullOrWhiteSpace(slug) ? "tag" : slug;
-    }
+            (request.TagIds ?? []).Distinct().ToList());
 }
