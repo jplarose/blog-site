@@ -69,11 +69,11 @@ export interface LayoutTemplate {
 // lib/api.ts (public-facing calls, no auth header)
 
 export const templatesApi = {
-  get: (id: number) => apiFetch<LayoutTemplate>(`/api/templates/${id}`),
+  get: (id: number) => apiFetch<LayoutTemplate>(`/api/layouttemplates/${id}`),
 };
 
 export const postsApi = {
-  getBySlug: (slug: string) => apiFetch<PublicPost>(`/api/posts/by-slug/${slug}`),
+  getBySlug: (slug: string) => apiFetch<Post>(`/api/posts/slug/${slug}`),
   listPublished: (categorySlug?: string) =>
     apiFetch<PublicPost[]>(`/api/posts?status=Published${categorySlug ? `&categorySlug=${categorySlug}` : ''}`),
 };
@@ -174,7 +174,7 @@ export default async function PostPage({ params }: { params: { slug: string } })
   // {{publishedAt}}, {{category}}, {{tags}} into template.htmlStructure, honoring the
   // {{#featuredImage}}...{{/featuredImage}} conditional section. content is already
   // sanitized server-side by the API — it is injected verbatim, not re-escaped.
-  const html = renderTemplate(template, post);
+  const html = renderTemplate(template.htmlStructure, post, post.publishedAt);
 
   return (
     <main>
@@ -197,24 +197,24 @@ The renderer is pure string substitution against the selected catalog template's
 /**
  * Render a template by replacing {{variable}} placeholders with post data.
  */
-export function renderTemplate(template: LayoutTemplate, post: PublicPost): string {
-  let html = template.htmlStructure;
-
-  // {{#featuredImage}}...{{/featuredImage}} — include the section only when present
-  if (post.featuredImageUrl) {
-    html = html.replace(/\{\{#featuredImage\}\}([\s\S]*?)\{\{\/featuredImage\}\}/g, '$1');
-  } else {
-    html = html.replace(/\{\{#featuredImage\}\}[\s\S]*?\{\{\/featuredImage\}\}/g, '');
-  }
-
-  return html
-    .replace(/\{\{title\}\}/g, post.title)
-    .replace(/\{\{content\}\}/g, post.content) // content is already sanitized HTML
-    .replace(/\{\{excerpt\}\}/g, post.excerpt ?? '')
-    .replace(/\{\{featuredImage\}\}/g, post.featuredImageUrl ?? '')
-    .replace(/\{\{publishedAt\}\}/g, new Date(post.publishedAt).toLocaleDateString())
-    .replace(/\{\{category\}\}/g, post.categoryName ?? '')
-    .replace(/\{\{tags\}\}/g, post.tags.join(', '));
+export function renderTemplate(
+  htmlStructure: string,
+  post: Post,
+  publishedAt?: string
+): string {
+  return htmlStructure
+    .replace(/\{\{title\}\}/g, escapeHtml(post.title))
+    .replace(/\{\{content\}\}/g, post.content) // content is already HTML / markdown
+    .replace(/\{\{excerpt\}\}/g, escapeHtml(post.excerpt ?? ""))
+    .replace(/\{\{publishedAt\}\}/g, publishedAt ? new Date(publishedAt).toLocaleDateString() : "")
+    .replace(/\{\{category\}\}/g, escapeHtml(post.categoryName ?? ""))
+    .replace(/\{\{tags\}\}/g, post.tags.map(escapeHtml).join(", "))
+    .replace(/\{\{featuredImage\}\}/g, post.featuredImageUrl ?? "")
+    .replace(/\{\{#featuredImage\}\}[\s\S]*?\{\{\/featuredImage\}\}/g, (match) =>
+      post.featuredImageUrl
+        ? match.replace(/\{\{#featuredImage\}\}/, "").replace(/\{\{\/featuredImage\}\}/, "")
+        : ""
+    );
 }
 ```
 

@@ -153,8 +153,8 @@ export class ApiError extends Error {
 export const api = {
   templates: {
     // Read-only catalog — no create/update/delete methods exist.
-    list: () => apiFetch<LayoutTemplate[]>('/api/templates'),
-    get: (id: number) => apiFetch<LayoutTemplate>(`/api/templates/${id}`),
+    list: () => apiFetch<LayoutTemplate[]>('/api/layouttemplates'),
+    get: (id: number) => apiFetch<LayoutTemplate>(`/api/layouttemplates/${id}`),
   },
 
   categories: {

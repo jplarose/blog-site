@@ -194,8 +194,8 @@ There is no `TemplateDefinition`, `TemplateBlock`, `TemplateField`, or publish-t
 ### Templates — read-only catalog
 
 ```
-GET /api/templates          — list the fixed catalog (all rows; no admin auth required)
-GET /api/templates/{id}     — get a single catalog template
+GET /api/layouttemplates          — list the fixed catalog (all rows; no admin auth required)
+GET /api/layouttemplates/{id}     — get a single catalog template
 ```
 
 There is no `POST`, `PUT`, or `DELETE` for templates. The catalog is application-managed and seeded (`sql/seeds/002_catalog_templates.sql`); nothing in this API creates, edits, or deletes `layout_templates` rows. Any endpoint or repository method that would mutate `layout_templates` is out of scope and must not be added.
@@ -218,15 +218,15 @@ Categories carry no template default — there is no `defaultTemplateId` field o
 GET    /api/posts                  — list posts [admin] (optional ?status=, ?categoryId= filters)
 POST   /api/posts                  — create post draft [admin]
 GET    /api/posts/{id}             — get post by id [admin] (any status)
-GET    /api/posts/by-slug/{slug}   — get post by slug (public; Published only)
+GET    /api/posts/slug/{slug}      — get post by slug (public; Published only)
 PUT    /api/posts/{id}             — save draft content, including the selected template [admin]
 POST   /api/posts/{id}/publish     — transition a post to Published [admin]
 DELETE /api/posts/{id}             — delete post [admin]
 ```
 
-- A post's `TemplateId` is an explicit selection from the read-only catalog (`GET /api/templates`); there is no per-post template-content authoring step and no snapshot to populate at publish time — the renderer always combines the post's *current* `Content` with its *currently selected* catalog template.
+- A post's `TemplateId` is an explicit selection from the read-only catalog (`GET /api/layouttemplates`); there is no per-post template-content authoring step and no snapshot to populate at publish time — the renderer always combines the post's *current* `Content` with its *currently selected* catalog template.
 - `Content` is accepted from the admin editor as rich HTML and must be sanitized server-side before persistence (see HTML Sanitization below).
-- `/api/posts/by-slug/{slug}` must filter to `Published` status only — it is the public endpoint.
+- `/api/posts/slug/{slug}` must filter to `Published` status only — it is the public endpoint.
 - Full request/response DTOs, validation rules, and pagination/filtering shape: issues #32–#33.
 
 ### Analytics
