@@ -39,7 +39,8 @@ public static class AddAuthApiJwtExtension
                 "Auth:BaseUrl must be an absolute HTTP or HTTPS URL.")
             .ValidateOnStart();
 
-        services.AddHttpClient<IJtiValidator, AuthApiJtiValidator>();
+        services.AddHttpClient<IJtiValidator, AuthApiJtiValidator>()
+            .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(5));
 
         services.AddAuthorization();
 
