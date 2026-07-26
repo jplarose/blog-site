@@ -22,14 +22,58 @@ internal sealed class FakePostRepository : IPostRepository
     /// <summary>Configurable result returned by <see cref="ExistsAsync"/>.</summary>
     public bool ExistsResult { get; set; }
 
-    public Task<PostPage> GetAllAsync(PostListQuery query, CancellationToken cancellationToken) =>
-        Task.FromResult(new PostPage([], 0));
+    /// <summary>
+    /// Backing store for <see cref="GetAllAsync"/>, filtered the same way the
+    /// real SQL would: <see cref="PostListQuery.PublishedOnly"/> overrides
+    /// any requested status filter to Published-only.
+    /// </summary>
+    public IReadOnlyList<PostSummaryDto> AllPosts { get; set; } = [];
 
-    public Task<PostDto?> GetByIdAsync(int id, CancellationToken cancellationToken) =>
-        Task.FromResult<PostDto?>(null);
+    /// <summary>
+    /// Backing store for <see cref="GetByIdAsync"/>/<see cref="GetBySlugAsync"/>,
+    /// filtered by id/slug and, when <c>publishedOnly</c> is requested, by
+    /// status — mirroring the real repository's SQL predicate.
+    /// </summary>
+    public IReadOnlyList<PostDto> AllDetailPosts { get; set; } = [];
 
-    public Task<PostDto?> GetBySlugAsync(string slug, CancellationToken cancellationToken) =>
-        Task.FromResult<PostDto?>(null);
+    public Task<PostPage> GetAllAsync(PostListQuery query, CancellationToken cancellationToken)
+    {
+        var posts = AllPosts.AsEnumerable();
+
+        if (query.PublishedOnly)
+        {
+            posts = posts.Where(post => post.Status == "Published");
+        }
+        else if (!string.IsNullOrWhiteSpace(query.Status))
+        {
+            posts = posts.Where(post => post.Status == query.Status);
+        }
+
+        var list = posts.ToList();
+        return Task.FromResult(new PostPage(list, list.Count));
+    }
+
+    public Task<PostDto?> GetByIdAsync(int id, bool publishedOnly, CancellationToken cancellationToken)
+    {
+        var post = AllDetailPosts.FirstOrDefault(post => post.Id == id);
+        if (post is null || (publishedOnly && post.Status != "Published"))
+        {
+            return Task.FromResult<PostDto?>(null);
+        }
+
+        return Task.FromResult<PostDto?>(post);
+    }
+
+    public Task<PostDto?> GetBySlugAsync(string slug, bool publishedOnly, CancellationToken cancellationToken)
+    {
+        var post = AllDetailPosts.FirstOrDefault(post => post.Slug == slug);
+        if (post is null || (publishedOnly && post.Status != "Published"))
+        {
+            return Task.FromResult<PostDto?>(null);
+        }
+
+        return Task.FromResult<PostDto?>(post);
+    }
 
     public Task<PostDto> CreateAsync(PostWrite post, CancellationToken cancellationToken) =>
         throw new NotSupportedException("Not needed for auth tests.");

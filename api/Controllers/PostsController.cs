@@ -11,11 +11,18 @@ namespace BlogSite.Api.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
-public class PostsController(
-    IPostRepository posts,
-    PostService postService) : ControllerBase
+public class PostsController(PostService postService) : ControllerBase
 {
-    /// <summary>Gets a filtered, paginated list of posts.</summary>
+    /// <summary>
+    /// Gets a filtered, paginated list of posts.
+    /// </summary>
+    /// <remarks>
+    /// Shared route, identity-branched view: an authenticated admin caller
+    /// gets the full behavior described below (all statuses, status filter
+    /// honored). An anonymous caller always gets the Published-only view —
+    /// any requested <paramref name="status"/> filter is ignored/overridden
+    /// to Published so non-Published posts can never be listed publicly.
+    /// </remarks>
     /// <param name="status">Optional post status filter.</param>
     /// <param name="categoryId">Optional category identifier filter.</param>
     /// <param name="tag">Optional tag slug filter.</param>
@@ -40,15 +47,25 @@ public class PostsController(
             parsedStatus = postStatus.ToString();
         }
 
-        var result = await posts.GetAllAsync(
+        var includeUnpublished = User.Identity?.IsAuthenticated == true;
+        var result = await postService.GetAllAsync(
             new PostListQuery(parsedStatus, categoryId, tag, page, pageSize),
+            includeUnpublished,
             cancellationToken);
 
         Response.Headers.Append("X-Total-Count", result.TotalCount.ToString());
         return Ok(result.Posts);
     }
 
-    /// <summary>Gets a post by identifier.</summary>
+    /// <summary>
+    /// Gets a post by identifier.
+    /// </summary>
+    /// <remarks>
+    /// Shared route, identity-branched view: an authenticated admin caller
+    /// can fetch a post in any state. An anonymous caller only ever sees
+    /// Published posts — a Draft, Scheduled, or Archived post 404s (not
+    /// 403) for an anonymous caller so its existence is never leaked.
+    /// </remarks>
     /// <param name="id">Post identifier.</param>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet("{id:int}")]
@@ -59,11 +76,20 @@ public class PostsController(
         int id,
         CancellationToken cancellationToken)
     {
-        var post = await posts.GetByIdAsync(id, cancellationToken);
+        var includeUnpublished = User.Identity?.IsAuthenticated == true;
+        var post = await postService.GetByIdAsync(id, includeUnpublished, cancellationToken);
         return post is null ? NotFound() : Ok(post);
     }
 
-    /// <summary>Gets a post by slug.</summary>
+    /// <summary>
+    /// Gets a post by slug.
+    /// </summary>
+    /// <remarks>
+    /// Shared route, identity-branched view: an authenticated admin caller
+    /// can fetch a post in any state. An anonymous caller only ever sees
+    /// Published posts — a Draft, Scheduled, or Archived post 404s (not
+    /// 403) for an anonymous caller so its existence is never leaked.
+    /// </remarks>
     /// <param name="slug">Post slug.</param>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet("slug/{slug}")]
@@ -74,7 +100,8 @@ public class PostsController(
         string slug,
         CancellationToken cancellationToken)
     {
-        var post = await posts.GetBySlugAsync(slug, cancellationToken);
+        var includeUnpublished = User.Identity?.IsAuthenticated == true;
+        var post = await postService.GetBySlugAsync(slug, includeUnpublished, cancellationToken);
         return post is null ? NotFound() : Ok(post);
     }
 

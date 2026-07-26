@@ -353,6 +353,81 @@ public class PostServiceTests
         Assert.Equal("Archived", result.Value?.Status);
     }
 
+    [Fact]
+    public async Task GetAllAsync_AnonymousCaller_ForcesPublishedOnlyRegardlessOfStatusFilter()
+    {
+        var repository = new FakePostRepository();
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+
+        await service.GetAllAsync(
+            new PostListQuery("Draft", null, null, 1, 20),
+            includeUnpublished: false,
+            CancellationToken.None);
+
+        Assert.NotNull(repository.CapturedListQuery);
+        Assert.True(repository.CapturedListQuery!.PublishedOnly);
+    }
+
+    [Fact]
+    public async Task GetAllAsync_AuthenticatedCaller_HonorsRequestedStatusFilter()
+    {
+        var repository = new FakePostRepository();
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+
+        await service.GetAllAsync(
+            new PostListQuery("Draft", null, null, 1, 20),
+            includeUnpublished: true,
+            CancellationToken.None);
+
+        Assert.NotNull(repository.CapturedListQuery);
+        Assert.False(repository.CapturedListQuery!.PublishedOnly);
+        Assert.Equal("Draft", repository.CapturedListQuery!.Status);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_AnonymousCaller_RequestsPublishedOnlyFromRepository()
+    {
+        var repository = new FakePostRepository();
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+
+        await service.GetByIdAsync(1, includeUnpublished: false, CancellationToken.None);
+
+        Assert.True(repository.CapturedGetByIdPublishedOnly);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_AuthenticatedCaller_DoesNotRestrictToPublished()
+    {
+        var repository = new FakePostRepository();
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+
+        await service.GetByIdAsync(1, includeUnpublished: true, CancellationToken.None);
+
+        Assert.False(repository.CapturedGetByIdPublishedOnly);
+    }
+
+    [Fact]
+    public async Task GetBySlugAsync_AnonymousCaller_RequestsPublishedOnlyFromRepository()
+    {
+        var repository = new FakePostRepository();
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+
+        await service.GetBySlugAsync("slug", includeUnpublished: false, CancellationToken.None);
+
+        Assert.True(repository.CapturedGetBySlugPublishedOnly);
+    }
+
+    [Fact]
+    public async Task GetBySlugAsync_AuthenticatedCaller_DoesNotRestrictToPublished()
+    {
+        var repository = new FakePostRepository();
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+
+        await service.GetBySlugAsync("slug", includeUnpublished: true, CancellationToken.None);
+
+        Assert.False(repository.CapturedGetBySlugPublishedOnly);
+    }
+
     private static CreatePostRequest CreateRequest(
         string status = "Draft",
         int? templateId = 1,
@@ -477,21 +552,38 @@ public class PostServiceTests
         public PostDto? ArchiveResult { get; init; }
         public bool ExistsResult { get; init; }
         public DateTime? ScheduleCapturedAt { get; private set; }
+        public PostListQuery? CapturedListQuery { get; private set; }
+        public bool CapturedGetByIdPublishedOnly { get; private set; }
+        public bool CapturedGetBySlugPublishedOnly { get; private set; }
+        public PostPage ListResult { get; init; } = new([], 0);
+        public PostDto? GetByIdResult { get; init; }
+        public PostDto? GetBySlugResult { get; init; }
 
         public Task<PostPage> GetAllAsync(
             PostListQuery query,
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
+            CancellationToken cancellationToken)
+        {
+            CapturedListQuery = query;
+            return Task.FromResult(ListResult);
+        }
 
         public Task<PostDto?> GetByIdAsync(
             int id,
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
+            bool publishedOnly,
+            CancellationToken cancellationToken)
+        {
+            CapturedGetByIdPublishedOnly = publishedOnly;
+            return Task.FromResult(GetByIdResult);
+        }
 
         public Task<PostDto?> GetBySlugAsync(
             string slug,
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
+            bool publishedOnly,
+            CancellationToken cancellationToken)
+        {
+            CapturedGetBySlugPublishedOnly = publishedOnly;
+            return Task.FromResult(GetBySlugResult);
+        }
 
         public Task<PostDto> CreateAsync(
             PostWrite post,

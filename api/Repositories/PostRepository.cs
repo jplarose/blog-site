@@ -4,12 +4,19 @@ using System.Data;
 
 namespace BlogSite.Api.Repositories;
 
+/// <param name="PublishedOnly">
+/// When <c>true</c>, restricts the list to Published posts and overrides
+/// <paramref name="Status"/> regardless of its value. Used to enforce the
+/// anonymous-caller view (see <c>PostsController.GetPosts</c>) without
+/// leaking non-Published posts through a status filter.
+/// </param>
 public sealed record PostListQuery(
     string? Status,
     int? CategoryId,
     string? Tag,
     int Page,
-    int PageSize);
+    int PageSize,
+    bool PublishedOnly = false);
 
 public sealed record PostPage(
     IReadOnlyList<PostSummaryDto> Posts,
@@ -32,8 +39,17 @@ public interface IPostRepository
     Task<PostPage> GetAllAsync(
         PostListQuery query,
         CancellationToken cancellationToken);
-    Task<PostDto?> GetByIdAsync(int id, CancellationToken cancellationToken);
-    Task<PostDto?> GetBySlugAsync(string slug, CancellationToken cancellationToken);
+    /// <param name="publishedOnly">
+    /// When <c>true</c>, only returns the post if its status is Published;
+    /// otherwise behaves as a not-found lookup for non-Published posts.
+    /// </param>
+    Task<PostDto?> GetByIdAsync(int id, bool publishedOnly, CancellationToken cancellationToken);
+
+    /// <param name="publishedOnly">
+    /// When <c>true</c>, only returns the post if its status is Published;
+    /// otherwise behaves as a not-found lookup for non-Published posts.
+    /// </param>
+    Task<PostDto?> GetBySlugAsync(string slug, bool publishedOnly, CancellationToken cancellationToken);
     Task<PostDto> CreateAsync(PostWrite post, CancellationToken cancellationToken);
     Task<PostDto?> UpdateAsync(
         int id,
@@ -83,7 +99,14 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
         var predicates = new List<string>();
         var parameters = new DynamicParameters();
 
-        if (!string.IsNullOrWhiteSpace(query.Status))
+        if (query.PublishedOnly)
+        {
+            // PublishedOnly overrides any requested Status filter — this is
+            // the anonymous-caller view and must never surface non-Published
+            // posts, regardless of what the caller asked for.
+            predicates.Add("post.status = 'Published'");
+        }
+        else if (!string.IsNullOrWhiteSpace(query.Status))
         {
             predicates.Add("post.status = @Status");
             parameters.Add("Status", query.Status);
@@ -174,13 +197,15 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
 
     public Task<PostDto?> GetByIdAsync(
         int id,
+        bool publishedOnly,
         CancellationToken cancellationToken) =>
-        GetOneAsync("post.id = @Value", id, cancellationToken);
+        GetOneAsync("post.id = @Value", id, publishedOnly, cancellationToken);
 
     public Task<PostDto?> GetBySlugAsync(
         string slug,
+        bool publishedOnly,
         CancellationToken cancellationToken) =>
-        GetOneAsync("post.slug = @Value", slug, cancellationToken);
+        GetOneAsync("post.slug = @Value", slug, publishedOnly, cancellationToken);
 
     public async Task<PostDto> CreateAsync(
         PostWrite post,
@@ -227,7 +252,7 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
         await ReplaceTagsAsync(id, post.TagIds, transaction, cancellationToken);
         transaction.Commit();
 
-        return (await GetByIdAsync(id, cancellationToken))!;
+        return (await GetByIdAsync(id, publishedOnly: false, cancellationToken))!;
     }
 
     public async Task<PostDto?> UpdateAsync(
@@ -277,7 +302,7 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
         await ReplaceTagsAsync(id, post.TagIds, transaction, cancellationToken);
         transaction.Commit();
 
-        return await GetByIdAsync(id, cancellationToken);
+        return await GetByIdAsync(id, publishedOnly: false, cancellationToken);
     }
 
     public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken)
@@ -319,7 +344,7 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
             cancellationToken: cancellationToken);
 
         var updatedId = await db.QuerySingleOrDefaultAsync<int?>(command);
-        return updatedId is null ? null : await GetByIdAsync(updatedId.Value, cancellationToken);
+        return updatedId is null ? null : await GetByIdAsync(updatedId.Value, publishedOnly: false, cancellationToken);
     }
 
     public async Task<bool> ExistsAsync(int id, CancellationToken cancellationToken)
@@ -365,7 +390,7 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
             cancellationToken: cancellationToken);
 
         var updatedId = await db.QuerySingleOrDefaultAsync<int?>(command);
-        return updatedId is null ? null : await GetByIdAsync(updatedId.Value, cancellationToken);
+        return updatedId is null ? null : await GetByIdAsync(updatedId.Value, publishedOnly: false, cancellationToken);
     }
 
     public async Task<PostDto?> ArchiveAsync(int id, CancellationToken cancellationToken)
@@ -387,18 +412,23 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
             cancellationToken: cancellationToken);
 
         var updatedId = await db.QuerySingleOrDefaultAsync<int?>(command);
-        return updatedId is null ? null : await GetByIdAsync(updatedId.Value, cancellationToken);
+        return updatedId is null ? null : await GetByIdAsync(updatedId.Value, publishedOnly: false, cancellationToken);
     }
 
     private async Task<PostDto?> GetOneAsync(
         string predicate,
         object value,
+        bool publishedOnly,
         CancellationToken cancellationToken)
     {
+        var effectivePredicate = publishedOnly
+            ? $"{predicate} AND post.status = 'Published'"
+            : predicate;
+
         var command = new CommandDefinition(
             $"""
             {SelectPostSql}
-            WHERE {predicate};
+            WHERE {effectivePredicate};
             """,
             new { Value = value },
             cancellationToken: cancellationToken);

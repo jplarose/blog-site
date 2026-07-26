@@ -10,6 +10,47 @@ public class PostService(
     ILayoutTemplateRepository templates,
     ITagRepository tags)
 {
+    /// <summary>
+    /// Gets a filtered, paginated list of posts. When
+    /// <paramref name="includeUnpublished"/> is <c>false</c> (anonymous
+    /// caller), the query is forced to Published-only regardless of any
+    /// requested status filter — the identity check itself lives in the
+    /// controller; this method only receives the resulting boolean, never
+    /// <c>HttpContext</c>.
+    /// </summary>
+    public Task<PostPage> GetAllAsync(
+        PostListQuery query,
+        bool includeUnpublished,
+        CancellationToken cancellationToken)
+    {
+        var effectiveQuery = includeUnpublished ? query : query with { PublishedOnly = true };
+        return posts.GetAllAsync(effectiveQuery, cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets a post by identifier. When <paramref name="includeUnpublished"/>
+    /// is <c>false</c> (anonymous caller), a non-Published post is treated
+    /// as not found (returns <c>null</c>) so the controller 404s without
+    /// leaking its existence.
+    /// </summary>
+    public Task<PostDto?> GetByIdAsync(
+        int id,
+        bool includeUnpublished,
+        CancellationToken cancellationToken) =>
+        posts.GetByIdAsync(id, publishedOnly: !includeUnpublished, cancellationToken);
+
+    /// <summary>
+    /// Gets a post by slug. When <paramref name="includeUnpublished"/> is
+    /// <c>false</c> (anonymous caller), a non-Published post is treated as
+    /// not found (returns <c>null</c>) so the controller 404s without
+    /// leaking its existence.
+    /// </summary>
+    public Task<PostDto?> GetBySlugAsync(
+        string slug,
+        bool includeUnpublished,
+        CancellationToken cancellationToken) =>
+        posts.GetBySlugAsync(slug, publishedOnly: !includeUnpublished, cancellationToken);
+
     public async Task<Result<PostDto>> CreateAsync(
         CreatePostRequest request,
         CancellationToken cancellationToken)
