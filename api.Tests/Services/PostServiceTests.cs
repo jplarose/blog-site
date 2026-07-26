@@ -263,6 +263,26 @@ public class PostServiceTests
     }
 
     [Fact]
+    public async Task ScheduleAsync_FutureNonUtcOffset_IsAcceptedAndConvertedToUtc()
+    {
+        var expected = PostDto() with { Status = "Scheduled" };
+        var repository = new FakePostRepository { ScheduleResult = expected };
+        var service = new PostService(repository, new FakeLayoutTemplateRepository());
+        var scheduledAt = new DateTimeOffset(
+            DateTime.SpecifyKind(DateTime.UtcNow.AddDays(1).Date.AddHours(14), DateTimeKind.Unspecified),
+            TimeSpan.FromHours(2));
+
+        var result = await service.ScheduleAsync(
+            1,
+            new ScheduleRequest(scheduledAt),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Same(expected, result.Value);
+        Assert.Equal(scheduledAt.UtcDateTime, repository.ScheduleCapturedAt);
+    }
+
+    [Fact]
     public async Task ScheduleAsync_FromScheduled_ReSchedulesSucceeds()
     {
         var expected = PostDto() with { Status = "Scheduled" };

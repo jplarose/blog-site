@@ -65,5 +65,11 @@ public record UpdatePostRequest(
     IEnumerable<string> Tags
 );
 
-/// <summary>Request to schedule a post to go live at a future time.</summary>
-public record ScheduleRequest(DateTime? ScheduledAt);
+/// <summary>
+/// Request to schedule a post to go live at a future time.
+/// ScheduledAt uses DateTimeOffset so the wire contract is unambiguous about
+/// the intended instant, regardless of whether the client sends a UTC or
+/// offset-local timestamp (an offset-less payload would otherwise be
+/// silently treated as UTC).
+/// </summary>
+public record ScheduleRequest(DateTimeOffset? ScheduledAt);

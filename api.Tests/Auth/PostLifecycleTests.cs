@@ -140,6 +140,31 @@ public class PostLifecycleTests
     }
 
     [Fact]
+    public async Task Schedule_FutureNonUtcOffset_ReturnsScheduledPost()
+    {
+        using var factory = new AuthTestWebApplicationFactory();
+        factory.PostRepository.ScheduleResult = SamplePost("Scheduled");
+        using var client = AuthenticatedClient(factory);
+
+        // Non-UTC offset payload: an unambiguous instant that is in the
+        // future even though its local clock time predates DateTime.UtcNow.
+        var futureLocal = DateTime.SpecifyKind(
+            DateTime.UtcNow.AddDays(1).AddHours(2),
+            DateTimeKind.Unspecified);
+        var scheduledAt = new DateTimeOffset(futureLocal, TimeSpan.FromHours(2));
+        var body = new StringContent(
+            $$"""{"scheduledAt":"{{scheduledAt:O}}"}""",
+            System.Text.Encoding.UTF8,
+            "application/json");
+
+        var response = await client.PostAsync("/api/posts/1/schedule", body);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var post = await response.Content.ReadFromJsonAsync<PostDto>();
+        Assert.Equal("Scheduled", post!.Status);
+    }
+
+    [Fact]
     public async Task Archive_UnknownId_Returns404()
     {
         using var factory = new AuthTestWebApplicationFactory();

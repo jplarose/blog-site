@@ -102,7 +102,7 @@ public class PostService(IPostRepository posts, ILayoutTemplateRepository templa
                 "ScheduledAt is required.");
         }
 
-        if (request.ScheduledAt.Value <= DateTime.UtcNow)
+        if (request.ScheduledAt.Value <= DateTimeOffset.UtcNow)
         {
             return Result<PostDto>.Failure(
                 "post.invalid_schedule",
@@ -111,13 +111,18 @@ public class PostService(IPostRepository posts, ILayoutTemplateRepository templa
 
         var scheduled = await posts.ScheduleAsync(
             id,
-            request.ScheduledAt.Value,
+            request.ScheduledAt.Value.UtcDateTime,
             cancellationToken);
         if (scheduled is not null)
         {
             return Result<PostDto>.Success(scheduled);
         }
 
+        // The row may have been deleted or transitioned between the failed
+        // update above and this existence check (TOCTOU). That race is
+        // accepted as benign here: worst case is a misleading error code
+        // (not_found vs invalid_transition) with no data-integrity impact,
+        // so no locking/retry is implemented by design.
         var exists = await posts.ExistsAsync(id, cancellationToken);
         return exists
             ? Result<PostDto>.Failure(
