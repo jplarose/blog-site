@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ACCESS_TOKEN_COOKIE,
@@ -61,6 +61,36 @@ describe("session cookies", () => {
     for (const cookie of cookies) {
       expect(cookie).not.toMatch(/Secure/i);
     }
+  });
+
+  describe("in production", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("marks session cookies Secure when NODE_ENV=production", () => {
+      vi.stubEnv("NODE_ENV", "production");
+      const cookies = buildSessionCookieHeaders(tokens);
+
+      expect(cookies).toHaveLength(2);
+      const accessCookie = cookies.find((c) => c.startsWith(`${ACCESS_TOKEN_COOKIE}=`));
+      const refreshCookie = cookies.find((c) => c.startsWith(`${REFRESH_TOKEN_COOKIE}=`));
+
+      expect(accessCookie).toMatch(/Secure/i);
+      expect(refreshCookie).toMatch(/Secure/i);
+    });
+
+    it("marks cleared cookies Secure when NODE_ENV=production", () => {
+      vi.stubEnv("NODE_ENV", "production");
+      const cookies = buildClearedCookieHeaders();
+
+      expect(cookies).toHaveLength(2);
+      const accessCookie = cookies.find((c) => c.startsWith(`${ACCESS_TOKEN_COOKIE}=`));
+      const refreshCookie = cookies.find((c) => c.startsWith(`${REFRESH_TOKEN_COOKIE}=`));
+
+      expect(accessCookie).toMatch(/Secure/i);
+      expect(refreshCookie).toMatch(/Secure/i);
+    });
   });
 
   it("builds expiring set-cookie headers that clear both cookies", () => {
