@@ -7,7 +7,16 @@ Set these environment variables for local admin development:
 ```bash
 APP_BASE_URL=http://localhost:3000
 DOTNET_APP_BASE_URL=http://localhost:5017
+AUTH_API_BASE_URL=http://localhost:5001
+AUTH_API_KEY=base64(<clientName>:<clientApiKey>)
 ```
+
+`AUTH_API_BASE_URL` is the base URL of the shared external Auth API used by the
+`/api/auth/*` BFF routes (`ui-admin/lib/auth/auth-api.ts`). `AUTH_API_KEY` is the
+pre-encoded `X-Api-Key` value for this client (`base64("<clientName>:<clientApiKey>")`) —
+treat it as a secret, never prefix it with `NEXT_PUBLIC_`, and never commit a real
+value. Both are read server-side only and are required at request time; requests
+fail fast with a clear error if either is unset.
 
 First, run the development server:
 
