@@ -364,7 +364,6 @@ Renders the post against its **currently selected** catalog template (there is n
 import { redirect } from 'next/navigation';
 import { getSessionToken } from '@/lib/auth';
 import { api } from '@/lib/api';
-import { renderTemplate } from '@/lib/render'; // shared with the public renderer, see Public UI spec
 
 export default async function PreviewPage({ params }: { params: { id: string } }) {
   const token = await getSessionToken();
@@ -378,7 +377,7 @@ export default async function PreviewPage({ params }: { params: { id: string } }
       <div className="bg-warning-50 border-b border-warning-200 px-4 py-2 text-sm text-warning-700">
         Preview — this post is not published.
       </div>
-      {template && <div dangerouslySetInnerHTML={{ __html: renderTemplate(template, post) }} />}
+      {template && <div dangerouslySetInnerHTML={{ __html: api.renderTemplate(template.htmlStructure, post, post.publishedAt) }} />}
     </div>
   );
 }

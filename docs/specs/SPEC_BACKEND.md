@@ -257,7 +257,7 @@ The Next.js admin BFF handles upload proxying to SeaweedFS directly (see Admin U
 - Do not use `dynamic` as a Dapper return type
 - Do not use EF Core, no `DbContext`, no migrations via EF
 - Do not swallow exceptions silently — all catch blocks must either rethrow or return a structured error response
-- Do not add `POST`, `PUT`, or `DELETE` endpoints for `/api/templates` — the catalog is read-only and fixed at three seeded rows
+- Do not add `POST`, `PUT`, or `DELETE` endpoints for `/api/layouttemplates` — the catalog is read-only and fixed at three seeded rows
 - Do not add a per-post template-content field, a block/field JSONB content model, or any publish-time template-snapshotting behavior to the Posts feature — posts carry a single sanitized HTML `Content` string plus an explicit `TemplateId`
 - Do not persist or return post `Content` without passing it through the shared HTML sanitizer first
 - Do not return `500` errors with exception stack traces to the client — log the exception server-side, return a generic `ErrorResponse` with code `INTERNAL_ERROR`

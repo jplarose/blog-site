@@ -53,6 +53,11 @@ and removes the old editable-template columns (`layout_json`,
 `categories` and `tags` rows are retained. Only run it against a
 disposable development database.
 
+**Warning:** The current API build still references these dropped
+columns in template, post, and category endpoints; they will fail at
+runtime after running this migration until the fixed-catalog API work
+lands (issues #30/#33).
+
 Two supported application paths:
 
 - **Clean schema** — create a fresh database and run migrations in
