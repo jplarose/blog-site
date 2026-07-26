@@ -1,4 +1,3 @@
-using System.Text.Json;
 using BlogSite.Api.DTOs;
 using BlogSite.Api.Repositories;
 
@@ -86,32 +85,36 @@ internal sealed class FakeTagRepository : ITagRepository
 
 internal sealed class FakeLayoutTemplateRepository : ILayoutTemplateRepository
 {
+    public bool ExistsResult { get; init; } = true;
+
+    /// <summary>
+    /// A single stand-in catalog row, keyed by id 1, so tests can fetch a
+    /// non-null template detail without a database.
+    /// </summary>
+    private static readonly LayoutTemplateDto SeededTemplate = new(
+        1,
+        "article",
+        "Article",
+        "Standard long-form post layout.",
+        "<article>{{content}}</article>",
+        ".tpl-article { max-width: 720px; }");
+
     public Task<IReadOnlyList<LayoutTemplateSummaryDto>> GetAllAsync(
         CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyList<LayoutTemplateSummaryDto>>([]);
+        Task.FromResult<IReadOnlyList<LayoutTemplateSummaryDto>>(
+        [
+            new LayoutTemplateSummaryDto(
+                SeededTemplate.Id,
+                SeededTemplate.TemplateKey,
+                SeededTemplate.Name,
+                SeededTemplate.Description)
+        ]);
 
     public Task<LayoutTemplateDto?> GetByIdAsync(int id, CancellationToken cancellationToken) =>
-        Task.FromResult<LayoutTemplateDto?>(null);
+        Task.FromResult(id == SeededTemplate.Id ? SeededTemplate : null);
 
-    public Task<LayoutTemplateDto> CreateAsync(
-        string name,
-        string description,
-        JsonElement layout,
-        bool isDefault,
-        CancellationToken cancellationToken) =>
-        throw new NotSupportedException("Not needed for auth tests.");
-
-    public Task<LayoutTemplateDto?> UpdateAsync(
-        int id,
-        string name,
-        string description,
-        JsonElement layout,
-        bool isDefault,
-        CancellationToken cancellationToken) =>
-        Task.FromResult<LayoutTemplateDto?>(null);
-
-    public Task<bool> DeleteAsync(int id, CancellationToken cancellationToken) =>
-        Task.FromResult(false);
+    public Task<bool> ExistsAsync(int id, CancellationToken cancellationToken) =>
+        Task.FromResult(ExistsResult);
 }
 
 internal sealed class FakeAnalyticsRepository : IAnalyticsRepository

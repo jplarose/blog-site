@@ -19,9 +19,6 @@ public class AuthenticationTests
     [InlineData("POST", "/api/tags")]
     [InlineData("PUT", "/api/tags/1")]
     [InlineData("DELETE", "/api/tags/1")]
-    [InlineData("POST", "/api/layouttemplates")]
-    [InlineData("PUT", "/api/layouttemplates/1")]
-    [InlineData("DELETE", "/api/layouttemplates/1")]
     [InlineData("GET", "/api/analytics/summary")]
     [InlineData("POST", "/api/media/images")]
     public async Task ProtectedEndpoint_NoToken_Returns401(string method, string path)

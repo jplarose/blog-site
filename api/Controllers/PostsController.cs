@@ -151,6 +151,7 @@ public class PostsController(
         {
             "post.not_found" => NotFound(result.Error.Message),
             "post.invalid_status" => BadRequest(result.Error.Message),
+            "post.template_invalid" => BadRequest(result.Error.Message),
             _ => BadRequest(result.Error?.Message ?? "The request could not be completed.")
         };
 

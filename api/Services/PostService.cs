@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 
 namespace BlogSite.Api.Services;
 
-public class PostService(IPostRepository posts)
+public class PostService(IPostRepository posts, ILayoutTemplateRepository templates)
 {
     public async Task<Result<PostDto>> CreateAsync(
         CreatePostRequest request,
@@ -17,6 +17,14 @@ public class PostService(IPostRepository posts)
             return Result<PostDto>.Failure(
                 "post.invalid_status",
                 "Invalid status value.");
+        }
+
+        var templateValidation = await ValidateTemplateAsync(
+            request.TemplateId,
+            cancellationToken);
+        if (templateValidation is not null)
+        {
+            return templateValidation;
         }
 
         var post = await posts.CreateAsync(
@@ -36,6 +44,14 @@ public class PostService(IPostRepository posts)
             return Result<PostDto>.Failure(
                 "post.invalid_status",
                 "Invalid status value.");
+        }
+
+        var templateValidation = await ValidateTemplateAsync(
+            request.TemplateId,
+            cancellationToken);
+        if (templateValidation is not null)
+        {
+            return templateValidation;
         }
 
         var post = await posts.UpdateAsync(
@@ -79,6 +95,20 @@ public class PostService(IPostRepository posts)
             .Select(group => group.First())
             .ToList();
 
+    private async Task<Result<PostDto>?> ValidateTemplateAsync(
+        int? templateId,
+        CancellationToken cancellationToken)
+    {
+        if (templateId is null || !await templates.ExistsAsync(templateId.Value, cancellationToken))
+        {
+            return Result<PostDto>.Failure(
+                "post.template_invalid",
+                "TemplateId must reference an existing catalog template.");
+        }
+
+        return null;
+    }
+
     private static PostWrite ToPostWrite(
         CreatePostRequest request,
         PostStatus status) =>
@@ -92,7 +122,6 @@ public class PostService(IPostRepository posts)
             request.ScheduledAt,
             request.CategoryId,
             request.TemplateId,
-            request.TemplateContent,
             NormalizeTags(request.Tags ?? []));
 
     private static PostWrite ToPostWrite(
@@ -108,7 +137,6 @@ public class PostService(IPostRepository posts)
             request.ScheduledAt,
             request.CategoryId,
             request.TemplateId,
-            request.TemplateContent,
             NormalizeTags(request.Tags ?? []));
 
     private static string SlugifyTag(string value)

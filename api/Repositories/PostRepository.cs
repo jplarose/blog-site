@@ -1,7 +1,6 @@
 using BlogSite.Api.DTOs;
 using Dapper;
 using System.Data;
-using System.Text.Json;
 
 namespace BlogSite.Api.Repositories;
 
@@ -28,7 +27,6 @@ public sealed record PostWrite(
     DateTime? ScheduledAt,
     int? CategoryId,
     int? TemplateId,
-    PostTemplateContentDto? TemplateContent,
     IReadOnlyList<PostTagWrite> Tags);
 
 public interface IPostRepository
@@ -63,8 +61,8 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
             post.category_id AS CategoryId,
             category.name AS CategoryName,
             post.template_id AS TemplateId,
+            template.template_key AS TemplateKey,
             template.name AS TemplateName,
-            post.template_content::text AS TemplateContentJson,
             post.created_at AS CreatedAt,
             post.updated_at AS UpdatedAt
         FROM posts AS post
@@ -134,6 +132,7 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
                 post.category_id AS CategoryId,
                 category.name AS CategoryName,
                 post.template_id AS TemplateId,
+                template.template_key AS TemplateKey,
                 template.name AS TemplateName,
                 post.created_at AS CreatedAt,
                 post.updated_at AS UpdatedAt
@@ -197,8 +196,7 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
                 published_at,
                 scheduled_at,
                 category_id,
-                template_id,
-                template_content
+                template_id
             )
             VALUES (
                 @Title,
@@ -210,8 +208,7 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
                 CASE WHEN @Status = 'Published' THEN NOW() ELSE NULL END,
                 @ScheduledAt,
                 @CategoryId,
-                @TemplateId,
-                CAST(@TemplateContentJson AS jsonb)
+                @TemplateId
             )
             RETURNING id;
             """;
@@ -253,7 +250,6 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
                 scheduled_at = @ScheduledAt,
                 category_id = @CategoryId,
                 template_id = @TemplateId,
-                template_content = CAST(@TemplateContentJson AS jsonb),
                 updated_at = NOW()
             WHERE id = @Id;
             """;
@@ -447,11 +443,6 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
         parameters.Add("ScheduledAt", post.ScheduledAt);
         parameters.Add("CategoryId", post.CategoryId);
         parameters.Add("TemplateId", post.TemplateId);
-        parameters.Add(
-            "TemplateContentJson",
-            post.TemplateContent is null
-                ? null
-                : JsonSerializer.Serialize(post.TemplateContent));
         return parameters;
     }
 
@@ -477,6 +468,7 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
         int? CategoryId,
         string? CategoryName,
         int? TemplateId,
+        string? TemplateKey,
         string? TemplateName,
         DateTime CreatedAt,
         DateTime UpdatedAt)
@@ -493,6 +485,7 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
             CategoryId,
             CategoryName,
             TemplateId,
+            TemplateKey,
             TemplateName,
             tags,
             CreatedAt,
@@ -512,8 +505,8 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
         int? CategoryId,
         string? CategoryName,
         int? TemplateId,
+        string? TemplateKey,
         string? TemplateName,
-        string? TemplateContentJson,
         DateTime CreatedAt,
         DateTime UpdatedAt)
     {
@@ -530,27 +523,10 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
             CategoryId,
             CategoryName,
             TemplateId,
+            TemplateKey,
             TemplateName,
-            DeserializeTemplateContent(TemplateContentJson),
             tags,
             CreatedAt,
             UpdatedAt);
-
-        private static PostTemplateContentDto? DeserializeTemplateContent(string? json)
-        {
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                return null;
-            }
-
-            try
-            {
-                return JsonSerializer.Deserialize<PostTemplateContentDto>(json);
-            }
-            catch (JsonException)
-            {
-                return null;
-            }
-        }
     }
 }

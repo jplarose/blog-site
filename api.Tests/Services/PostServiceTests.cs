@@ -10,7 +10,7 @@ public class PostServiceTests
     public async Task CreateAsync_InvalidStatus_ReturnsFailureWithoutWriting()
     {
         var repository = new FakePostRepository();
-        var service = new PostService(repository);
+        var service = new PostService(repository, new FakeLayoutTemplateRepository());
 
         var result = await service.CreateAsync(
             CreateRequest(status: "unknown"),
@@ -22,13 +22,65 @@ public class PostServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_MissingTemplateId_ReturnsTemplateValidationFailure()
+    {
+        var repository = new FakePostRepository();
+        var service = new PostService(repository, new FakeLayoutTemplateRepository());
+
+        var result = await service.CreateAsync(
+            CreateRequest(templateId: null),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("post.template_invalid", result.Error?.Code);
+        Assert.Equal(
+            "TemplateId must reference an existing catalog template.",
+            result.Error?.Message);
+        Assert.Null(repository.CreatedPost);
+    }
+
+    [Fact]
+    public async Task CreateAsync_UnknownTemplateId_ReturnsTemplateValidationFailure()
+    {
+        var repository = new FakePostRepository();
+        var templates = new FakeLayoutTemplateRepository { Exists = false };
+        var service = new PostService(repository, templates);
+
+        var result = await service.CreateAsync(
+            CreateRequest(templateId: 999),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("post.template_invalid", result.Error?.Code);
+        Assert.Null(repository.CreatedPost);
+    }
+
+    [Fact]
+    public async Task CreateAsync_ValidTemplateId_NotBlockedByTemplateValidation()
+    {
+        var repository = new FakePostRepository
+        {
+            CreateResult = PostDto()
+        };
+        var templates = new FakeLayoutTemplateRepository { Exists = true };
+        var service = new PostService(repository, templates);
+
+        var result = await service.CreateAsync(
+            CreateRequest(templateId: 1),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(repository.CreatedPost);
+    }
+
+    [Fact]
     public async Task CreateAsync_NormalizesTagsBeforeWriting()
     {
         var repository = new FakePostRepository
         {
             CreateResult = PostDto()
         };
-        var service = new PostService(repository);
+        var service = new PostService(repository, new FakeLayoutTemplateRepository());
 
         var result = await service.CreateAsync(
             CreateRequest(tags: ["  C#  ", "c#", "ASP.NET Core"]),
@@ -56,7 +108,7 @@ public class PostServiceTests
         {
             CreateResult = PostDto()
         };
-        var service = new PostService(repository);
+        var service = new PostService(repository, new FakeLayoutTemplateRepository());
 
         await service.CreateAsync(
             CreateRequest(tags: ["C#", "C++"]),
@@ -70,7 +122,7 @@ public class PostServiceTests
     public async Task UpdateAsync_MissingPost_ReturnsNotFound()
     {
         var repository = new FakePostRepository();
-        var service = new PostService(repository);
+        var service = new PostService(repository, new FakeLayoutTemplateRepository());
 
         var result = await service.UpdateAsync(
             42,
@@ -82,6 +134,22 @@ public class PostServiceTests
     }
 
     [Fact]
+    public async Task UpdateAsync_UnknownTemplateId_ReturnsTemplateValidationFailure()
+    {
+        var repository = new FakePostRepository();
+        var templates = new FakeLayoutTemplateRepository { Exists = false };
+        var service = new PostService(repository, templates);
+
+        var result = await service.UpdateAsync(
+            1,
+            UpdateRequest(templateId: 999),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("post.template_invalid", result.Error?.Code);
+    }
+
+    [Fact]
     public async Task PublishAsync_ExistingPost_ReturnsRepositoryValue()
     {
         var expected = PostDto();
@@ -89,7 +157,7 @@ public class PostServiceTests
         {
             PublishResult = expected
         };
-        var service = new PostService(repository);
+        var service = new PostService(repository, new FakeLayoutTemplateRepository());
 
         var result = await service.PublishAsync(
             expected.Id,
@@ -101,6 +169,7 @@ public class PostServiceTests
 
     private static CreatePostRequest CreateRequest(
         string status = "Draft",
+        int? templateId = 1,
         IEnumerable<string>? tags = null) =>
         new(
             "Title",
@@ -111,11 +180,10 @@ public class PostServiceTests
             status,
             null,
             null,
-            null,
-            null,
+            templateId,
             tags ?? []);
 
-    private static UpdatePostRequest UpdateRequest() =>
+    private static UpdatePostRequest UpdateRequest(int? templateId = 1) =>
         new(
             "Title",
             "title",
@@ -125,8 +193,7 @@ public class PostServiceTests
             "Draft",
             null,
             null,
-            null,
-            null,
+            templateId,
             []);
 
     private static PostDto PostDto() =>
@@ -142,12 +209,29 @@ public class PostServiceTests
             null,
             null,
             null,
-            null,
-            null,
-            null,
+            1,
+            "article",
+            "Article",
             [],
             DateTime.UtcNow,
             DateTime.UtcNow);
+
+    private sealed class FakeLayoutTemplateRepository : ILayoutTemplateRepository
+    {
+        public bool Exists { get; init; } = true;
+
+        public Task<IReadOnlyList<LayoutTemplateSummaryDto>> GetAllAsync(
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<LayoutTemplateDto?> GetByIdAsync(
+            int id,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<bool> ExistsAsync(int id, CancellationToken cancellationToken) =>
+            Task.FromResult(Exists);
+    }
 
     private sealed class FakePostRepository : IPostRepository
     {
