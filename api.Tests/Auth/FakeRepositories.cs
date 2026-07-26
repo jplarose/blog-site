@@ -22,6 +22,28 @@ internal sealed class FakePostRepository : IPostRepository
     /// <summary>Configurable result returned by <see cref="ExistsAsync"/>.</summary>
     public bool ExistsResult { get; set; }
 
+    /// <summary>Configurable result returned by <see cref="CreateAsync"/>.</summary>
+    public PostDto CreateResult { get; set; } = new(
+        1, "Title", "title", "Content", null, null, "Draft", null, null,
+        null, null, null, null, null, [], DateTime.UtcNow, DateTime.UtcNow);
+
+    /// <summary>
+    /// The <see cref="PostWrite"/> value that reached the repository via
+    /// <see cref="CreateAsync"/> — captured so tests can assert the
+    /// persisted value (post-sanitization), not just the HTTP response.
+    /// </summary>
+    public PostWrite? CapturedCreate { get; private set; }
+
+    /// <summary>
+    /// The <see cref="PostWrite"/> value that reached the repository via
+    /// <see cref="UpdateAsync"/> — captured so tests can assert the
+    /// persisted value (post-sanitization), not just the HTTP response.
+    /// </summary>
+    public PostWrite? CapturedUpdate { get; private set; }
+
+    /// <summary>Configurable result returned by <see cref="UpdateAsync"/>.</summary>
+    public PostDto? UpdateResult { get; set; }
+
     /// <summary>
     /// Backing store for <see cref="GetAllAsync"/>, filtered the same way the
     /// real SQL would: <see cref="PostListQuery.PublishedOnly"/> overrides
@@ -75,11 +97,17 @@ internal sealed class FakePostRepository : IPostRepository
         return Task.FromResult<PostDto?>(post);
     }
 
-    public Task<PostDto> CreateAsync(PostWrite post, CancellationToken cancellationToken) =>
-        throw new NotSupportedException("Not needed for auth tests.");
+    public Task<PostDto> CreateAsync(PostWrite post, CancellationToken cancellationToken)
+    {
+        CapturedCreate = post;
+        return Task.FromResult(CreateResult);
+    }
 
-    public Task<PostDto?> UpdateAsync(int id, PostWrite post, CancellationToken cancellationToken) =>
-        Task.FromResult<PostDto?>(null);
+    public Task<PostDto?> UpdateAsync(int id, PostWrite post, CancellationToken cancellationToken)
+    {
+        CapturedUpdate = post;
+        return Task.FromResult<PostDto?>(UpdateResult);
+    }
 
     public Task<bool> DeleteAsync(int id, CancellationToken cancellationToken) =>
         Task.FromResult(false);

@@ -1,3 +1,4 @@
+using BlogSite.Api.Common;
 using BlogSite.Api.Extensions;
 using BlogSite.Api.Repositories;
 using BlogSite.Api.Services;
@@ -13,6 +14,7 @@ builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
 builder.Services.AddScoped<ILayoutTemplateRepository, LayoutTemplateRepository>();
 builder.Services.AddScoped<IPostRepository, PostRepository>();
 builder.Services.AddScoped<ITagRepository, TagRepository>();
+builder.Services.AddSingleton<IPostHtmlSanitizer, PostHtmlSanitizer>();
 builder.Services.AddScoped<CategoryService>();
 builder.Services.AddScoped<PostService>();
 builder.Services.AddScoped<TagService>();

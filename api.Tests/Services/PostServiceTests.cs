@@ -1,3 +1,4 @@
+using BlogSite.Api.Common;
 using BlogSite.Api.DTOs;
 using BlogSite.Api.Repositories;
 using BlogSite.Api.Services;
@@ -13,7 +14,8 @@ public class PostServiceTests
         var service = new PostService(
             repository,
             new FakeLayoutTemplateRepository(),
-            new FakeTagRepository());
+            new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         var result = await service.CreateAsync(
             CreateRequest(status: "unknown"),
@@ -31,7 +33,8 @@ public class PostServiceTests
         var service = new PostService(
             repository,
             new FakeLayoutTemplateRepository(),
-            new FakeTagRepository());
+            new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         var result = await service.CreateAsync(
             CreateRequest(templateId: null),
@@ -50,7 +53,8 @@ public class PostServiceTests
     {
         var repository = new FakePostRepository();
         var templates = new FakeLayoutTemplateRepository { Exists = false };
-        var service = new PostService(repository, templates, new FakeTagRepository());
+        var service = new PostService(repository, templates, new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         var result = await service.CreateAsync(
             CreateRequest(templateId: 999),
@@ -69,7 +73,8 @@ public class PostServiceTests
             CreateResult = PostDto()
         };
         var templates = new FakeLayoutTemplateRepository { Exists = true };
-        var service = new PostService(repository, templates, new FakeTagRepository());
+        var service = new PostService(repository, templates, new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         var result = await service.CreateAsync(
             CreateRequest(templateId: 1),
@@ -84,7 +89,8 @@ public class PostServiceTests
     {
         var repository = new FakePostRepository();
         var tags = new FakeTagRepository { ExistingIds = [1] };
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), tags);
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), tags,
+            new PostHtmlSanitizer());
 
         var result = await service.CreateAsync(
             CreateRequest(tagIds: [1, 999]),
@@ -104,7 +110,8 @@ public class PostServiceTests
             CreateResult = PostDto()
         };
         var tags = new FakeTagRepository { ExistingIds = [1, 2] };
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), tags);
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), tags,
+            new PostHtmlSanitizer());
 
         var result = await service.CreateAsync(
             CreateRequest(tagIds: [1, 2]),
@@ -121,7 +128,8 @@ public class PostServiceTests
         var service = new PostService(
             repository,
             new FakeLayoutTemplateRepository(),
-            new FakeTagRepository());
+            new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         var result = await service.UpdateAsync(
             42,
@@ -137,7 +145,8 @@ public class PostServiceTests
     {
         var repository = new FakePostRepository();
         var templates = new FakeLayoutTemplateRepository { Exists = false };
-        var service = new PostService(repository, templates, new FakeTagRepository());
+        var service = new PostService(repository, templates, new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         var result = await service.UpdateAsync(
             1,
@@ -153,7 +162,8 @@ public class PostServiceTests
     {
         var repository = new FakePostRepository();
         var tags = new FakeTagRepository { ExistingIds = [] };
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), tags);
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), tags,
+            new PostHtmlSanitizer());
 
         var result = await service.UpdateAsync(
             1,
@@ -172,7 +182,8 @@ public class PostServiceTests
         {
             PublishResult = expected
         };
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         var result = await service.PublishAsync(
             expected.Id,
@@ -186,7 +197,8 @@ public class PostServiceTests
     public async Task PublishAsync_MissingPost_ReturnsNotFound()
     {
         var repository = new FakePostRepository();
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         var result = await service.PublishAsync(42, CancellationToken.None);
 
@@ -198,7 +210,8 @@ public class PostServiceTests
     public async Task ScheduleAsync_MissingScheduledAt_ReturnsInvalidScheduleFailure()
     {
         var repository = new FakePostRepository();
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         var result = await service.ScheduleAsync(
             1,
@@ -214,7 +227,8 @@ public class PostServiceTests
     public async Task ScheduleAsync_PastScheduledAt_ReturnsInvalidScheduleFailure()
     {
         var repository = new FakePostRepository();
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         var result = await service.ScheduleAsync(
             1,
@@ -230,7 +244,8 @@ public class PostServiceTests
     public async Task ScheduleAsync_UnknownPost_ReturnsNotFound()
     {
         var repository = new FakePostRepository { ExistsResult = false };
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         var result = await service.ScheduleAsync(
             1,
@@ -245,7 +260,8 @@ public class PostServiceTests
     public async Task ScheduleAsync_PublishedPost_ReturnsInvalidTransitionFailure()
     {
         var repository = new FakePostRepository { ExistsResult = true };
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         var result = await service.ScheduleAsync(
             1,
@@ -264,7 +280,8 @@ public class PostServiceTests
     {
         var expected = PostDto() with { Status = "Scheduled" };
         var repository = new FakePostRepository { ScheduleResult = expected };
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository(),
+            new PostHtmlSanitizer());
         var scheduledAt = DateTime.UtcNow.AddDays(1);
 
         var result = await service.ScheduleAsync(
@@ -282,7 +299,8 @@ public class PostServiceTests
     {
         var expected = PostDto() with { Status = "Scheduled" };
         var repository = new FakePostRepository { ScheduleResult = expected };
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository(),
+            new PostHtmlSanitizer());
         var scheduledAt = new DateTimeOffset(
             DateTime.SpecifyKind(DateTime.UtcNow.AddDays(1).Date.AddHours(14), DateTimeKind.Unspecified),
             TimeSpan.FromHours(2));
@@ -302,7 +320,8 @@ public class PostServiceTests
     {
         var expected = PostDto() with { Status = "Scheduled" };
         var repository = new FakePostRepository { ScheduleResult = expected };
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository(),
+            new PostHtmlSanitizer());
         var newScheduledAt = DateTime.UtcNow.AddDays(3);
 
         var result = await service.ScheduleAsync(
@@ -319,7 +338,8 @@ public class PostServiceTests
     public async Task ArchiveAsync_MissingPost_ReturnsNotFound()
     {
         var repository = new FakePostRepository();
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         var result = await service.ArchiveAsync(42, CancellationToken.None);
 
@@ -332,7 +352,8 @@ public class PostServiceTests
     {
         var expected = PostDto() with { Status = "Archived" };
         var repository = new FakePostRepository { ArchiveResult = expected };
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         var result = await service.ArchiveAsync(expected.Id, CancellationToken.None);
 
@@ -345,7 +366,8 @@ public class PostServiceTests
     {
         var expected = PostDto() with { Status = "Archived" };
         var repository = new FakePostRepository { ArchiveResult = expected };
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         var result = await service.ArchiveAsync(expected.Id, CancellationToken.None);
 
@@ -357,7 +379,8 @@ public class PostServiceTests
     public async Task GetAllAsync_AnonymousCaller_ForcesPublishedOnlyRegardlessOfStatusFilter()
     {
         var repository = new FakePostRepository();
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         await service.GetAllAsync(
             new PostListQuery("Draft", null, null, 1, 20),
@@ -372,7 +395,8 @@ public class PostServiceTests
     public async Task GetAllAsync_AuthenticatedCaller_HonorsRequestedStatusFilter()
     {
         var repository = new FakePostRepository();
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         await service.GetAllAsync(
             new PostListQuery("Draft", null, null, 1, 20),
@@ -388,7 +412,8 @@ public class PostServiceTests
     public async Task GetByIdAsync_AnonymousCaller_RequestsPublishedOnlyFromRepository()
     {
         var repository = new FakePostRepository();
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         await service.GetByIdAsync(1, includeUnpublished: false, CancellationToken.None);
 
@@ -399,7 +424,8 @@ public class PostServiceTests
     public async Task GetByIdAsync_AuthenticatedCaller_DoesNotRestrictToPublished()
     {
         var repository = new FakePostRepository();
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         await service.GetByIdAsync(1, includeUnpublished: true, CancellationToken.None);
 
@@ -410,7 +436,8 @@ public class PostServiceTests
     public async Task GetBySlugAsync_AnonymousCaller_RequestsPublishedOnlyFromRepository()
     {
         var repository = new FakePostRepository();
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         await service.GetBySlugAsync("slug", includeUnpublished: false, CancellationToken.None);
 
@@ -421,7 +448,8 @@ public class PostServiceTests
     public async Task GetBySlugAsync_AuthenticatedCaller_DoesNotRestrictToPublished()
     {
         var repository = new FakePostRepository();
-        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository());
+        var service = new PostService(repository, new FakeLayoutTemplateRepository(), new FakeTagRepository(),
+            new PostHtmlSanitizer());
 
         await service.GetBySlugAsync("slug", includeUnpublished: true, CancellationToken.None);
 

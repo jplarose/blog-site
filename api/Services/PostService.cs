@@ -1,3 +1,4 @@
+using BlogSite.Api.Common;
 using BlogSite.Api.DTOs;
 using BlogSite.Api.Domain;
 using BlogSite.Api.Repositories;
@@ -8,7 +9,8 @@ namespace BlogSite.Api.Services;
 public class PostService(
     IPostRepository posts,
     ILayoutTemplateRepository templates,
-    ITagRepository tags)
+    ITagRepository tags,
+    IPostHtmlSanitizer sanitizer)
 {
     /// <summary>
     /// Gets a filtered, paginated list of posts. When
@@ -242,14 +244,14 @@ public class PostService(
         return null;
     }
 
-    private static PostWrite ToPostWrite(
+    private PostWrite ToPostWrite(
         CreatePostRequest request,
         PostStatus status) =>
         new(
-            request.Title.Trim(),
+            sanitizer.SanitizePlainText(request.Title).Trim(),
             request.Slug.Trim(),
-            request.Content,
-            request.Excerpt,
+            sanitizer.SanitizeRichHtml(request.Content),
+            request.Excerpt is null ? null : sanitizer.SanitizePlainText(request.Excerpt).Trim(),
             request.FeaturedImageUrl,
             status.ToString(),
             request.ScheduledAt,
@@ -257,14 +259,14 @@ public class PostService(
             request.TemplateId,
             (request.TagIds ?? []).Distinct().ToList());
 
-    private static PostWrite ToPostWrite(
+    private PostWrite ToPostWrite(
         UpdatePostRequest request,
         PostStatus status) =>
         new(
-            request.Title.Trim(),
+            sanitizer.SanitizePlainText(request.Title).Trim(),
             request.Slug.Trim(),
-            request.Content,
-            request.Excerpt,
+            sanitizer.SanitizeRichHtml(request.Content),
+            request.Excerpt is null ? null : sanitizer.SanitizePlainText(request.Excerpt).Trim(),
             request.FeaturedImageUrl,
             status.ToString(),
             request.ScheduledAt,
