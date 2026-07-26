@@ -2,12 +2,14 @@ using BlogSite.Api.DTOs;
 using BlogSite.Api.Repositories;
 using BlogSite.Api.Results;
 using BlogSite.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BlogSite.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class TagsController(
     ITagRepository tags,
     TagService tagService) : ControllerBase
@@ -15,6 +17,7 @@ public class TagsController(
     /// <summary>Gets all tags and their post counts.</summary>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(IEnumerable<TagDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<TagDto>>> GetTags(
         CancellationToken cancellationToken) =>
@@ -24,6 +27,7 @@ public class TagsController(
     /// <param name="id">Tag identifier.</param>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet("{id:int}")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(TagDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<TagDto>> GetTag(

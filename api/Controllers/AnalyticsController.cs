@@ -1,11 +1,13 @@
 using BlogSite.Api.DTOs;
 using BlogSite.Api.Repositories;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BlogSite.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class AnalyticsController(IAnalyticsRepository analytics) : ControllerBase
 {
     /// <summary>Gets aggregate analytics for the requested number of days.</summary>
@@ -25,6 +27,7 @@ public class AnalyticsController(IAnalyticsRepository analytics) : ControllerBas
     /// <param name="request">Page-view details.</param>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpPost("pageview")]
+    [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public async Task<IActionResult> RecordPageView(
         [FromBody] RecordPageViewRequest request,

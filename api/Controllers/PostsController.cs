@@ -3,12 +3,14 @@ using BlogSite.Api.Domain;
 using BlogSite.Api.Repositories;
 using BlogSite.Api.Results;
 using BlogSite.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BlogSite.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class PostsController(
     IPostRepository posts,
     PostService postService) : ControllerBase
@@ -21,6 +23,7 @@ public class PostsController(
     /// <param name="pageSize">Maximum posts returned per page.</param>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(IEnumerable<PostSummaryDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<PostSummaryDto>>> GetPosts(
         [FromQuery] string? status,
@@ -49,6 +52,7 @@ public class PostsController(
     /// <param name="id">Post identifier.</param>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet("{id:int}")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(PostDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<PostDto>> GetPost(
@@ -63,6 +67,7 @@ public class PostsController(
     /// <param name="slug">Post slug.</param>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet("slug/{slug}")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(PostDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<PostDto>> GetPostBySlug(

@@ -2,12 +2,14 @@ using BlogSite.Api.DTOs;
 using BlogSite.Api.Repositories;
 using BlogSite.Api.Results;
 using BlogSite.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BlogSite.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class CategoriesController(
     ICategoryRepository categories,
     CategoryService categoryService) : ControllerBase
@@ -15,6 +17,7 @@ public class CategoriesController(
     /// <summary>Gets all categories and their post counts.</summary>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(IEnumerable<CategoryDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<CategoryDto>>> GetCategories(
         CancellationToken cancellationToken) =>
@@ -24,6 +27,7 @@ public class CategoriesController(
     /// <param name="id">Category identifier.</param>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet("{id:int}")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CategoryDto>> GetCategory(

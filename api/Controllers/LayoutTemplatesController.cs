@@ -2,12 +2,14 @@ using BlogSite.Api.DTOs;
 using BlogSite.Api.Repositories;
 using BlogSite.Api.Results;
 using BlogSite.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BlogSite.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class LayoutTemplatesController(
     ILayoutTemplateRepository templates,
     LayoutTemplateService layoutTemplateService) : ControllerBase
@@ -15,6 +17,7 @@ public class LayoutTemplatesController(
     /// <summary>Gets all layout templates and their usage counts.</summary>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet]
+    [AllowAnonymous]
     [ProducesResponseType(
         typeof(IEnumerable<LayoutTemplateSummaryDto>),
         StatusCodes.Status200OK)]
@@ -26,6 +29,7 @@ public class LayoutTemplatesController(
     /// <param name="id">Template identifier.</param>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet("{id:int}")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(LayoutTemplateDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<LayoutTemplateDto>> GetTemplate(

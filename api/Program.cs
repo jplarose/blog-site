@@ -7,6 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Database
 builder.Services.AddPostgres(builder.Configuration);
 builder.Services.AddImageStorage(builder.Configuration);
+builder.Services.AddAuthApiJwt(builder.Configuration);
 builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();
 builder.Services.AddScoped<ICategoryRepository, CategoryRepository>();
 builder.Services.AddScoped<ILayoutTemplateRepository, LayoutTemplateRepository>();
@@ -41,7 +42,14 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors();
 app.UseHttpsRedirection();
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+/// <summary>
+/// Entry point marker exposed so integration tests can host the API via
+/// <c>WebApplicationFactory&lt;Program&gt;</c>.
+/// </summary>
+public partial class Program;

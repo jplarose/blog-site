@@ -45,6 +45,27 @@ Configure the API's `SeaweedFiler` section:
 The admin UI uploads through the .NET API; it does not connect to SeaweedFS
 directly.
 
+### Authentication
+
+The API validates JWTs issued by the shared Auth API and checks each token's
+`jti` against the Auth API's revocation record on every request. Configure
+the `Auth` section:
+
+- `Auth:Jwt:Secret`: HS256 shared signing secret (must match the Auth API).
+  Required; must be at least 32 bytes. A dev-only placeholder is committed
+  in `appsettings.Development.json` — set a real value via environment
+  variables or deployment config in every other environment.
+- `Auth:Jwt:Issuer`: expected token issuer (`auth.jlarose.me`).
+- `Auth:Jwt:Audience`: expected token audience — this API's registered
+  client name in the Auth API.
+- `Auth:BaseUrl`: Auth API base URL, used for the `POST /Auth/validate-jti`
+  revocation check.
+- `Auth:ApiKey`: opaque `X-Api-Key` sent on revocation checks. May be empty
+  in local development.
+
+If the Auth API cannot be reached when validating a token, authentication
+fails closed (the request is rejected rather than allowed through).
+
 ---
 
 ## `/sql` — Database Schema
