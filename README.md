@@ -19,7 +19,7 @@ blog-site/
 **Tech stack:** ASP.NET Core 10 · Dapper · Npgsql (PostgreSQL) · JWT Bearer Authentication
 
 ### Features
-- CRUD endpoints for **Posts**, **Categories**, **Tags**, and **Layout Templates**
+- CRUD endpoints for **Posts**, **Categories**, and **Tags**; a read-only **Layout Templates** catalog endpoint
 - Post status workflow: `Draft → Scheduled → Published → Archived`
 - Post scheduling (publish at a future date)
 - Analytics: page-view recording and summary (top posts, daily views, unique visitors)
@@ -71,10 +71,10 @@ See [`sql/README.md`](sql/README.md) for full documentation.
 - **Login** page (connects to JWT auth endpoint)
 - **Dashboard** with quick stats and actions
 - **Posts** — list, filter by status, create new post with live preview
-- **Post Editor** — Write/Preview tabs, draft save, scheduling, category/tag/template selection
-- **Categories** — create, edit, assign default layout template
+- **Post Editor** — Write/Preview tabs, draft save, scheduling, category/tag selection, and picking one of the three fixed catalog templates
+- **Categories** — create, edit (no default template — template selection is per post)
 - **Tags** — create and manage tags
-- **Layout Templates** — create HTML+CSS templates with live preview and template variable support
+- **Layout Templates** — fixed, seeded catalog of three templates (Article, Feature, Photo Essay); not user-editable
 - **Analytics** — page view stats, top posts, daily view chart
 
 ### Run locally
@@ -94,7 +94,7 @@ npm run dev                  # http://localhost:3000
 
 ### Features
 - **Home page** — lists all published posts (ISR, revalidates every 60 s)
-- **Post page** (`/blog/[slug]`) — renders post using its assigned layout template; falls back to default prose layout
+- **Post page** (`/blog/[slug]`) — renders post using its selected catalog layout template
 - **Category page** (`/category/[slug]`) — lists all published posts in a category
 - **Categories listing** (`/categories`)
 - Template rendering: `{{title}}`, `{{content}}`, `{{publishedAt}}`, `{{category}}`, `{{tags}}`, `{{featuredImage}}` variables
