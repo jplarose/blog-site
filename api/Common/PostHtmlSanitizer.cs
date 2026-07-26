@@ -1,3 +1,4 @@
+using System.Net;
 using Ganss.Xss;
 
 namespace BlogSite.Api.Common;
@@ -101,8 +102,21 @@ public sealed class PostHtmlSanitizer : IPostHtmlSanitizer
     public string SanitizeRichHtml(string html) =>
         string.IsNullOrEmpty(html) ? html : richHtmlSanitizer.Sanitize(html);
 
-    public string SanitizePlainText(string text) =>
-        string.IsNullOrEmpty(text) ? text : plainTextSanitizer.Sanitize(text);
+    public string SanitizePlainText(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return text;
+        }
+
+        // Sanitize strips all tags (and dangerous tag content, e.g.
+        // script/style) but re-serializes the surviving text as HTML, so
+        // entities like "&" come back as "&amp;". Decode afterwards so the
+        // stored/returned value is genuine plain text, not HTML-escaped
+        // text, then trim the whitespace left behind by removed tags.
+        var stripped = plainTextSanitizer.Sanitize(text);
+        return WebUtility.HtmlDecode(stripped).Trim();
+    }
 
     /// <summary>
     /// Enforces per-tag attribute scoping that HtmlSanitizer's global

@@ -125,4 +125,98 @@ public class PostHtmlSanitizerTests
         Assert.Contains("Title", result);
         Assert.DoesNotContain("alert(1)", result);
     }
+
+    [Fact]
+    public void SanitizePlainText_PlainAmpersand_IsUnchanged()
+    {
+        var result = sanitizer.SanitizePlainText("Dogs & Cats");
+
+        Assert.Equal("Dogs & Cats", result);
+    }
+
+    [Fact]
+    public void SanitizePlainText_EncodedEntity_IsDecodedNotReEncoded()
+    {
+        var result = sanitizer.SanitizePlainText("<b>Hi &amp; bye</b>");
+
+        Assert.Equal("Hi & bye", result);
+    }
+
+    [Fact]
+    public void SanitizePlainText_ScriptContent_IsRemovedEntirely()
+    {
+        var result = sanitizer.SanitizePlainText("Before<script>alert('x & y')</script>After");
+
+        Assert.Equal("BeforeAfter", result);
+        Assert.DoesNotContain("alert", result);
+        Assert.DoesNotContain("script", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SanitizeRichHtml_RelativeAnchorHref_SurvivesIntact()
+    {
+        var result = sanitizer.SanitizeRichHtml("<a href=\"/about\">about</a>");
+
+        Assert.Contains("href=\"/about\"", result);
+    }
+
+    [Fact]
+    public void SanitizeRichHtml_RelativeImgSrc_SurvivesIntact()
+    {
+        var result = sanitizer.SanitizeRichHtml("<img src=\"/images/x.png\" alt=\"x\">");
+
+        Assert.Contains("src=\"/images/x.png\"", result);
+    }
+
+    [Fact]
+    public void SanitizeRichHtml_DotDotRelativeHref_SurvivesIntact()
+    {
+        var result = sanitizer.SanitizeRichHtml("<a href=\"../relative\">rel</a>");
+
+        Assert.Contains("href=\"../relative\"", result);
+    }
+
+    [Fact]
+    public void SanitizeRichHtml_MailtoImgSrc_IsStripped()
+    {
+        var result = sanitizer.SanitizeRichHtml("<img src=\"mailto:x@y.z\" alt=\"x\">");
+
+        Assert.DoesNotContain("mailto:", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SanitizeRichHtml_MailtoAnchorHref_IsKept()
+    {
+        var result = sanitizer.SanitizeRichHtml("<a href=\"mailto:x@y.z\">email</a>");
+
+        Assert.Contains("href=\"mailto:x@y.z\"", result);
+    }
+
+    [Fact]
+    public void SanitizeRichHtml_BlockquoteHrUS_PassThroughIntact()
+    {
+        var result = sanitizer.SanitizeRichHtml(
+            "<blockquote>quote</blockquote><hr><u>underline</u><s>strike</s>");
+
+        Assert.Contains("<blockquote>quote</blockquote>", result);
+        Assert.Contains("<hr>", result);
+        Assert.Contains("<u>underline</u>", result);
+        Assert.Contains("<s>strike</s>", result);
+    }
+
+    [Fact]
+    public void SanitizeRichHtml_TableFragment_PassesThroughIntact()
+    {
+        const string html =
+            "<table><thead><tr><th>H</th></tr></thead>" +
+            "<tbody><tr><td>D</td></tr></tbody></table>";
+
+        var result = sanitizer.SanitizeRichHtml(html);
+
+        Assert.Contains("<table>", result);
+        Assert.Contains("<thead>", result);
+        Assert.Contains("<tr><th>H</th></tr>", result);
+        Assert.Contains("<tbody>", result);
+        Assert.Contains("<tr><td>D</td></tr>", result);
+    }
 }
