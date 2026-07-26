@@ -10,6 +10,18 @@ namespace BlogSite.Api.Tests.Auth;
 /// </summary>
 internal sealed class FakePostRepository : IPostRepository
 {
+    /// <summary>Configurable result returned by <see cref="PublishAsync"/>.</summary>
+    public PostDto? PublishResult { get; set; }
+
+    /// <summary>Configurable result returned by <see cref="ScheduleAsync"/>.</summary>
+    public PostDto? ScheduleResult { get; set; }
+
+    /// <summary>Configurable result returned by <see cref="ArchiveAsync"/>.</summary>
+    public PostDto? ArchiveResult { get; set; }
+
+    /// <summary>Configurable result returned by <see cref="ExistsAsync"/>.</summary>
+    public bool ExistsResult { get; set; }
+
     public Task<PostPage> GetAllAsync(PostListQuery query, CancellationToken cancellationToken) =>
         Task.FromResult(new PostPage([], 0));
 
@@ -29,7 +41,19 @@ internal sealed class FakePostRepository : IPostRepository
         Task.FromResult(false);
 
     public Task<PostDto?> PublishAsync(int id, CancellationToken cancellationToken) =>
-        Task.FromResult<PostDto?>(null);
+        Task.FromResult(PublishResult);
+
+    public Task<bool> ExistsAsync(int id, CancellationToken cancellationToken) =>
+        Task.FromResult(ExistsResult);
+
+    public Task<PostDto?> ScheduleAsync(
+        int id,
+        DateTime scheduledAt,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(ScheduleResult);
+
+    public Task<PostDto?> ArchiveAsync(int id, CancellationToken cancellationToken) =>
+        Task.FromResult(ArchiveResult);
 }
 
 internal sealed class FakeCategoryRepository : ICategoryRepository

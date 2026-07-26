@@ -64,3 +64,6 @@ public record UpdatePostRequest(
     int? TemplateId,
     IEnumerable<string> Tags
 );
+
+/// <summary>Request to schedule a post to go live at a future time.</summary>
+public record ScheduleRequest(DateTime? ScheduledAt);

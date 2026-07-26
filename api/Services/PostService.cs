@@ -84,6 +84,62 @@ public class PostService(IPostRepository posts, ILayoutTemplateRepository templa
             : Result<PostDto>.Success(post);
     }
 
+    /// <summary>
+    /// Schedules a post to go live at a future time. There is no background
+    /// scheduler in this system: a Scheduled post only becomes Published
+    /// (and publicly visible) via an explicit call to
+    /// <see cref="PublishAsync"/> after the scheduled time has passed.
+    /// </summary>
+    public async Task<Result<PostDto>> ScheduleAsync(
+        int id,
+        ScheduleRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.ScheduledAt is null)
+        {
+            return Result<PostDto>.Failure(
+                "post.invalid_schedule",
+                "ScheduledAt is required.");
+        }
+
+        if (request.ScheduledAt.Value <= DateTime.UtcNow)
+        {
+            return Result<PostDto>.Failure(
+                "post.invalid_schedule",
+                "ScheduledAt must be in the future.");
+        }
+
+        var scheduled = await posts.ScheduleAsync(
+            id,
+            request.ScheduledAt.Value,
+            cancellationToken);
+        if (scheduled is not null)
+        {
+            return Result<PostDto>.Success(scheduled);
+        }
+
+        var exists = await posts.ExistsAsync(id, cancellationToken);
+        return exists
+            ? Result<PostDto>.Failure(
+                "post.invalid_transition",
+                "Only draft or scheduled posts can be scheduled.")
+            : Result<PostDto>.Failure("post.not_found", "Post was not found.");
+    }
+
+    /// <summary>
+    /// Archives a post. Allowed from any state and idempotent: archiving an
+    /// already-Archived post simply returns it unchanged.
+    /// </summary>
+    public async Task<Result<PostDto>> ArchiveAsync(
+        int id,
+        CancellationToken cancellationToken)
+    {
+        var post = await posts.ArchiveAsync(id, cancellationToken);
+        return post is null
+            ? Result<PostDto>.Failure("post.not_found", "Post was not found.")
+            : Result<PostDto>.Success(post);
+    }
+
     internal static IReadOnlyList<PostTagWrite> NormalizeTags(
         IEnumerable<string> requestedTags) =>
         requestedTags

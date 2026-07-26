@@ -167,6 +167,157 @@ public class PostServiceTests
         Assert.Same(expected, result.Value);
     }
 
+    [Fact]
+    public async Task PublishAsync_MissingPost_ReturnsNotFound()
+    {
+        var repository = new FakePostRepository();
+        var service = new PostService(repository, new FakeLayoutTemplateRepository());
+
+        var result = await service.PublishAsync(42, CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("post.not_found", result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task ScheduleAsync_MissingScheduledAt_ReturnsInvalidScheduleFailure()
+    {
+        var repository = new FakePostRepository();
+        var service = new PostService(repository, new FakeLayoutTemplateRepository());
+
+        var result = await service.ScheduleAsync(
+            1,
+            new ScheduleRequest(null),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("post.invalid_schedule", result.Error?.Code);
+        Assert.Null(repository.ScheduleCapturedAt);
+    }
+
+    [Fact]
+    public async Task ScheduleAsync_PastScheduledAt_ReturnsInvalidScheduleFailure()
+    {
+        var repository = new FakePostRepository();
+        var service = new PostService(repository, new FakeLayoutTemplateRepository());
+
+        var result = await service.ScheduleAsync(
+            1,
+            new ScheduleRequest(DateTime.UtcNow.AddMinutes(-1)),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("post.invalid_schedule", result.Error?.Code);
+        Assert.Null(repository.ScheduleCapturedAt);
+    }
+
+    [Fact]
+    public async Task ScheduleAsync_UnknownPost_ReturnsNotFound()
+    {
+        var repository = new FakePostRepository { ExistsResult = false };
+        var service = new PostService(repository, new FakeLayoutTemplateRepository());
+
+        var result = await service.ScheduleAsync(
+            1,
+            new ScheduleRequest(DateTime.UtcNow.AddDays(1)),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("post.not_found", result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task ScheduleAsync_PublishedPost_ReturnsInvalidTransitionFailure()
+    {
+        var repository = new FakePostRepository { ExistsResult = true };
+        var service = new PostService(repository, new FakeLayoutTemplateRepository());
+
+        var result = await service.ScheduleAsync(
+            1,
+            new ScheduleRequest(DateTime.UtcNow.AddDays(1)),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("post.invalid_transition", result.Error?.Code);
+        Assert.Equal(
+            "Only draft or scheduled posts can be scheduled.",
+            result.Error?.Message);
+    }
+
+    [Fact]
+    public async Task ScheduleAsync_FromDraft_Succeeds()
+    {
+        var expected = PostDto() with { Status = "Scheduled" };
+        var repository = new FakePostRepository { ScheduleResult = expected };
+        var service = new PostService(repository, new FakeLayoutTemplateRepository());
+        var scheduledAt = DateTime.UtcNow.AddDays(1);
+
+        var result = await service.ScheduleAsync(
+            1,
+            new ScheduleRequest(scheduledAt),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Same(expected, result.Value);
+        Assert.Equal(scheduledAt, repository.ScheduleCapturedAt);
+    }
+
+    [Fact]
+    public async Task ScheduleAsync_FromScheduled_ReSchedulesSucceeds()
+    {
+        var expected = PostDto() with { Status = "Scheduled" };
+        var repository = new FakePostRepository { ScheduleResult = expected };
+        var service = new PostService(repository, new FakeLayoutTemplateRepository());
+        var newScheduledAt = DateTime.UtcNow.AddDays(3);
+
+        var result = await service.ScheduleAsync(
+            1,
+            new ScheduleRequest(newScheduledAt),
+            CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Same(expected, result.Value);
+        Assert.Equal(newScheduledAt, repository.ScheduleCapturedAt);
+    }
+
+    [Fact]
+    public async Task ArchiveAsync_MissingPost_ReturnsNotFound()
+    {
+        var repository = new FakePostRepository();
+        var service = new PostService(repository, new FakeLayoutTemplateRepository());
+
+        var result = await service.ArchiveAsync(42, CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("post.not_found", result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task ArchiveAsync_ExistingPost_ReturnsRepositoryValue()
+    {
+        var expected = PostDto() with { Status = "Archived" };
+        var repository = new FakePostRepository { ArchiveResult = expected };
+        var service = new PostService(repository, new FakeLayoutTemplateRepository());
+
+        var result = await service.ArchiveAsync(expected.Id, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Same(expected, result.Value);
+    }
+
+    [Fact]
+    public async Task ArchiveAsync_AlreadyArchivedPost_IsIdempotent()
+    {
+        var expected = PostDto() with { Status = "Archived" };
+        var repository = new FakePostRepository { ArchiveResult = expected };
+        var service = new PostService(repository, new FakeLayoutTemplateRepository());
+
+        var result = await service.ArchiveAsync(expected.Id, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("Archived", result.Value?.Status);
+    }
+
     private static CreatePostRequest CreateRequest(
         string status = "Draft",
         int? templateId = 1,
@@ -239,6 +390,10 @@ public class PostServiceTests
         public PostDto CreateResult { get; init; } = PostDto();
         public PostDto? UpdateResult { get; init; }
         public PostDto? PublishResult { get; init; }
+        public PostDto? ScheduleResult { get; init; }
+        public PostDto? ArchiveResult { get; init; }
+        public bool ExistsResult { get; init; }
+        public DateTime? ScheduleCapturedAt { get; private set; }
 
         public Task<PostPage> GetAllAsync(
             PostListQuery query,
@@ -278,5 +433,22 @@ public class PostServiceTests
             int id,
             CancellationToken cancellationToken) =>
             Task.FromResult(PublishResult);
+
+        public Task<bool> ExistsAsync(int id, CancellationToken cancellationToken) =>
+            Task.FromResult(ExistsResult);
+
+        public Task<PostDto?> ScheduleAsync(
+            int id,
+            DateTime scheduledAt,
+            CancellationToken cancellationToken)
+        {
+            ScheduleCapturedAt = scheduledAt;
+            return Task.FromResult(ScheduleResult);
+        }
+
+        public Task<PostDto?> ArchiveAsync(
+            int id,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(ArchiveResult);
     }
 }

@@ -130,7 +130,11 @@ public class PostsController(
         return result.IsFailure ? MapFailure(result) : NoContent();
     }
 
-    /// <summary>Publishes a post immediately.</summary>
+    /// <summary>
+    /// Publishes a post immediately. Allowed from any state and idempotent:
+    /// publishing an already-Published post leaves its original
+    /// <c>publishedAt</c> untouched and simply clears any pending schedule.
+    /// </summary>
     /// <param name="id">Post identifier.</param>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpPost("{id:int}/publish")]
@@ -146,12 +150,65 @@ public class PostsController(
             : Ok(result.Value);
     }
 
+    /// <summary>
+    /// Schedules a post to go live at a future time. There is no background
+    /// scheduler: a Scheduled post only becomes publicly visible once this
+    /// system's owner explicitly calls <see cref="PublishPost"/> after the
+    /// scheduled time — scheduling alone never flips a post to Published.
+    /// </summary>
+    /// <param name="id">Post identifier.</param>
+    /// <param name="request">The future date and time the post should go live.</param>
+    /// <param name="cancellationToken">Cancels the database operation.</param>
+    /// <response code="400">
+    /// <c>scheduledAt</c> is missing or is not strictly in the future.
+    /// </response>
+    /// <response code="409">
+    /// The post is Published or Archived; only Draft or Scheduled posts can
+    /// be scheduled.
+    /// </response>
+    [HttpPost("{id:int}/schedule")]
+    [ProducesResponseType(typeof(PostDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<PostDto>> SchedulePost(
+        int id,
+        [FromBody] ScheduleRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await postService.ScheduleAsync(id, request, cancellationToken);
+        return result.IsFailure
+            ? MapFailure<PostDto>(result)
+            : Ok(result.Value);
+    }
+
+    /// <summary>
+    /// Archives a post. Allowed from any state and idempotent: archiving an
+    /// already-Archived post returns it unchanged.
+    /// </summary>
+    /// <param name="id">Post identifier.</param>
+    /// <param name="cancellationToken">Cancels the database operation.</param>
+    [HttpPost("{id:int}/archive")]
+    [ProducesResponseType(typeof(PostDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<PostDto>> ArchivePost(
+        int id,
+        CancellationToken cancellationToken)
+    {
+        var result = await postService.ArchiveAsync(id, cancellationToken);
+        return result.IsFailure
+            ? MapFailure<PostDto>(result)
+            : Ok(result.Value);
+    }
+
     private ActionResult<T> MapFailure<T>(Result result) =>
         result.Error?.Code switch
         {
             "post.not_found" => NotFound(result.Error.Message),
             "post.invalid_status" => BadRequest(result.Error.Message),
             "post.template_invalid" => BadRequest(result.Error.Message),
+            "post.invalid_schedule" => BadRequest(result.Error.Message),
+            "post.invalid_transition" => Conflict(result.Error.Message),
             _ => BadRequest(result.Error?.Message ?? "The request could not be completed.")
         };
 

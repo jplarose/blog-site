@@ -18,6 +18,8 @@ internal sealed class AuthTestWebApplicationFactory : WebApplicationFactory<Prog
 {
     public FakeJtiValidator JtiValidator { get; } = new();
 
+    public FakePostRepository PostRepository { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
@@ -28,7 +30,7 @@ internal sealed class AuthTestWebApplicationFactory : WebApplicationFactory<Prog
             services.AddSingleton<IJtiValidator>(JtiValidator);
 
             services.RemoveAll<IPostRepository>();
-            services.AddSingleton<IPostRepository>(new FakePostRepository());
+            services.AddSingleton<IPostRepository>(PostRepository);
 
             services.RemoveAll<ICategoryRepository>();
             services.AddSingleton<ICategoryRepository>(new FakeCategoryRepository());

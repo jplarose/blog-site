@@ -13,6 +13,8 @@ public class AuthenticationTests
     [InlineData("PUT", "/api/posts/1")]
     [InlineData("DELETE", "/api/posts/1")]
     [InlineData("POST", "/api/posts/1/publish")]
+    [InlineData("POST", "/api/posts/1/schedule")]
+    [InlineData("POST", "/api/posts/1/archive")]
     [InlineData("POST", "/api/categories")]
     [InlineData("PUT", "/api/categories/1")]
     [InlineData("DELETE", "/api/categories/1")]

@@ -43,6 +43,12 @@ public interface IPostRepository
         CancellationToken cancellationToken);
     Task<bool> DeleteAsync(int id, CancellationToken cancellationToken);
     Task<PostDto?> PublishAsync(int id, CancellationToken cancellationToken);
+    Task<bool> ExistsAsync(int id, CancellationToken cancellationToken);
+    Task<PostDto?> ScheduleAsync(
+        int id,
+        DateTime scheduledAt,
+        CancellationToken cancellationToken);
+    Task<PostDto?> ArchiveAsync(int id, CancellationToken cancellationToken);
 }
 
 public sealed class PostRepository(IDbConnection db) : IPostRepository
@@ -295,13 +301,18 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
         int id,
         CancellationToken cancellationToken)
     {
+        // Publishing is idempotent and allowed from any state: published_at
+        // is set only the first time (preserved on re-publish), and any
+        // pending schedule is cleared since the post is now live.
         const string sql = """
             UPDATE posts
             SET
                 status = 'Published',
-                published_at = NOW(),
+                published_at = COALESCE(published_at, NOW()),
+                scheduled_at = NULL,
                 updated_at = NOW()
-            WHERE id = @Id;
+            WHERE id = @Id
+            RETURNING id;
             """;
 
         var command = new CommandDefinition(
@@ -309,8 +320,76 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
             new { Id = id },
             cancellationToken: cancellationToken);
 
-        var updated = await db.ExecuteAsync(command);
-        return updated == 0 ? null : await GetByIdAsync(id, cancellationToken);
+        var updatedId = await db.QuerySingleOrDefaultAsync<int?>(command);
+        return updatedId is null ? null : await GetByIdAsync(updatedId.Value, cancellationToken);
+    }
+
+    public async Task<bool> ExistsAsync(int id, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM posts
+                WHERE id = @Id
+            );
+            """;
+
+        var command = new CommandDefinition(
+            sql,
+            new { Id = id },
+            cancellationToken: cancellationToken);
+
+        return await db.ExecuteScalarAsync<bool>(command);
+    }
+
+    public async Task<PostDto?> ScheduleAsync(
+        int id,
+        DateTime scheduledAt,
+        CancellationToken cancellationToken)
+    {
+        // Only Draft or Scheduled posts can be (re-)scheduled; the WHERE
+        // clause makes that an atomic check-and-set so a Published or
+        // Archived post is left untouched (0 rows affected).
+        const string sql = """
+            UPDATE posts
+            SET
+                status = 'Scheduled',
+                scheduled_at = @ScheduledAt,
+                updated_at = NOW()
+            WHERE id = @Id
+                AND status IN ('Draft', 'Scheduled')
+            RETURNING id;
+            """;
+
+        var command = new CommandDefinition(
+            sql,
+            new { Id = id, ScheduledAt = scheduledAt },
+            cancellationToken: cancellationToken);
+
+        var updatedId = await db.QuerySingleOrDefaultAsync<int?>(command);
+        return updatedId is null ? null : await GetByIdAsync(updatedId.Value, cancellationToken);
+    }
+
+    public async Task<PostDto?> ArchiveAsync(int id, CancellationToken cancellationToken)
+    {
+        // Archiving is idempotent and allowed from any state; published_at
+        // and scheduled_at are left untouched so history is preserved.
+        const string sql = """
+            UPDATE posts
+            SET
+                status = 'Archived',
+                updated_at = NOW()
+            WHERE id = @Id
+            RETURNING id;
+            """;
+
+        var command = new CommandDefinition(
+            sql,
+            new { Id = id },
+            cancellationToken: cancellationToken);
+
+        var updatedId = await db.QuerySingleOrDefaultAsync<int?>(command);
+        return updatedId is null ? null : await GetByIdAsync(updatedId.Value, cancellationToken);
     }
 
     private async Task<PostDto?> GetOneAsync(
