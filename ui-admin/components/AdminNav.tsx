@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useState } from "react";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard" },
@@ -14,6 +15,17 @@ const navItems = [
 
 export default function AdminNav() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
+  async function handleSignOut() {
+    setIsSigningOut(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      router.push("/login");
+    }
+  }
 
   return (
     <aside className="w-56 shrink-0 bg-gray-900 text-white min-h-screen flex flex-col">
@@ -39,12 +51,14 @@ export default function AdminNav() {
         })}
       </nav>
       <div className="p-4 border-t border-gray-700">
-        <Link
-          href="/login"
-          className="block text-sm text-gray-400 hover:text-white transition-colors"
+        <button
+          type="button"
+          onClick={handleSignOut}
+          disabled={isSigningOut}
+          className="block w-full text-left text-sm text-gray-400 hover:text-white transition-colors disabled:opacity-60"
         >
           Sign out
-        </Link>
+        </button>
       </div>
     </aside>
   );

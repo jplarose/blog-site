@@ -80,6 +80,17 @@ export interface MediaUpload {
   url: string;
 }
 
+/** Distinguishable error thrown by `apiFetch` so callers can tell auth failures apart. */
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const requestUrl =
     typeof window === "undefined"
@@ -95,7 +106,17 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,
   });
-  if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+
+  if (!res.ok) {
+    if (res.status === 401 && typeof window !== "undefined") {
+      // The proxy already retried once with a refreshed token; a 401 here means
+      // the session is gone. Send the browser back to the login page.
+      window.location.assign("/login");
+      throw new ApiError(401, "Unauthorized");
+    }
+    throw new ApiError(res.status, `API error ${res.status}: ${await res.text()}`);
+  }
+
   if (res.status === 204) return undefined as T;
   return res.json();
 }
