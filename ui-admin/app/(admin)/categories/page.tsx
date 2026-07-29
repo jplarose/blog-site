@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 export default function CategoriesPage() {
   return (
     <div className="space-y-6">
@@ -36,11 +34,8 @@ export default function CategoriesPage() {
 
       {/* Inline form hint */}
       <p className="text-xs text-gray-400">
-        Each category can have a default{" "}
-        <Link href="/templates" className="text-indigo-600 hover:underline">
-          layout template
-        </Link>{" "}
-        assigned to it. Individual posts can override this.
+        Each category can have a default layout template assigned to it. Individual posts can
+        override this.
       </p>
     </div>
   );

@@ -162,16 +162,10 @@ export const tagsApi = {
     apiFetch<void>(`/api/tags/${id}`, { method: "DELETE" }),
 };
 
-// ---- Templates ----
+// ---- Templates (read-only catalog; see issue #30) ----
 export const templatesApi = {
   list: () => apiFetch<TemplateSummary[]>("/api/layouttemplates"),
   get: (id: number) => apiFetch<LayoutTemplate>(`/api/layouttemplates/${id}`),
-  create: (data: unknown) =>
-    apiFetch<LayoutTemplate>("/api/layouttemplates", { method: "POST", body: JSON.stringify(data) }),
-  update: (id: number, data: unknown) =>
-    apiFetch<LayoutTemplate>(`/api/layouttemplates/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-  delete: (id: number) =>
-    apiFetch<void>(`/api/layouttemplates/${id}`, { method: "DELETE" }),
 };
 
 // ---- Analytics ----

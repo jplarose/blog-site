@@ -9,7 +9,6 @@ const navItems = [
   { href: "/posts", label: "Posts" },
   { href: "/categories", label: "Categories" },
   { href: "/tags", label: "Tags" },
-  { href: "/templates", label: "Templates" },
   { href: "/analytics", label: "Analytics" },
 ];
 

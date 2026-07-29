@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import ImageUploadControl from "@/components/media/ImageUploadControl";
 import RichTextContent from "@/components/rte/RichTextContent";
 import RichTextEditor from "@/components/rte/RichTextEditor";
-import TemplateCanvasPreview from "@/components/template-editor/TemplateCanvasPreview";
 import {
   categoriesApi,
   postsApi,
@@ -351,11 +350,10 @@ export default function PostEditorForm({
             ) : (
               <div className="min-h-[480px] px-6 py-4 prose max-w-none">
                 {activeTemplate ? (
-                  <TemplateCanvasPreview
-                    layout={activeTemplate.layout}
-                    contentValues={templateContentValues}
-                    postTitle={title}
-                  />
+                  <p className="text-sm text-gray-500 italic">
+                    Template preview is not available yet. Content will render using the
+                    selected template’s fields when the post is saved.
+                  </p>
                 ) : content ? (
                   <div>
                     {title && <h1>{title}</h1>}
