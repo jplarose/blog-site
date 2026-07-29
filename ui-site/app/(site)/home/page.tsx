@@ -1,8 +1,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
-import type { PostSummary } from "@/lib/api";
-import { postsApi } from "@/lib/api";
+import type { Category, PostSummary } from "@/lib/api";
+import { categoriesApi, postsApi } from "@/lib/api";
+import { resolveCategorySlug } from "@/lib/category-link";
 import PageViewRecorder from "@/components/PageViewRecorder";
 
 export const metadata: Metadata = {
@@ -19,6 +20,17 @@ export default async function HomePage() {
     posts = result.posts;
   } catch {
     loadFailed = true;
+  }
+
+  // Categories are only needed to resolve real category-link slugs (see
+  // resolveCategorySlug). A failure here degrades to plain-text category
+  // labels rather than failing the whole page — the post list itself
+  // doesn't depend on it.
+  let categories: Category[] = [];
+  try {
+    categories = await categoriesApi.list();
+  } catch {
+    // categories stays empty — links render as plain text below
   }
 
   return (
@@ -41,50 +53,58 @@ export default async function HomePage() {
         </div>
       ) : (
         <div className="space-y-8">
-          {posts.map((post) => (
-            <article key={post.id} className="border-b border-gray-100 pb-8">
-              {post.featuredImageUrl && (
-                <div className="relative w-full h-52 mb-4">
-                  <Image
-                    src={post.featuredImageUrl}
-                    alt={post.title}
-                    fill
-                    className="object-cover rounded-xl"
-                  />
-                </div>
-              )}
-              <div className="space-y-2">
-                {post.categoryName && (
-                  <Link
-                    href={`/category/${post.categoryName.toLowerCase()}`}
-                    className="text-xs font-semibold uppercase tracking-wider text-indigo-600 hover:underline"
-                  >
-                    {post.categoryName}
-                  </Link>
+          {posts.map((post) => {
+            const categorySlug = resolveCategorySlug(categories, post.categoryId);
+            return (
+              <article key={post.id} className="border-b border-gray-100 pb-8">
+                {post.featuredImageUrl && (
+                  <div className="relative w-full h-52 mb-4">
+                    <Image
+                      src={post.featuredImageUrl}
+                      alt={post.title}
+                      fill
+                      className="object-cover rounded-xl"
+                    />
+                  </div>
                 )}
-                <h2 className="text-xl font-bold text-gray-900 hover:text-indigo-600 transition-colors">
-                  <Link href={`/blog/${post.slug}`}>{post.title}</Link>
-                </h2>
-                {post.excerpt && (
-                  <p className="text-gray-600 text-sm leading-relaxed">{post.excerpt}</p>
-                )}
-                <div className="flex items-center gap-4 text-xs text-gray-400">
-                  {post.publishedAt && (
-                    <time dateTime={post.publishedAt}>
-                      {new Date(post.publishedAt).toLocaleDateString(undefined, {
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
-                      })}
-                    </time>
+                <div className="space-y-2">
+                  {post.categoryName && categorySlug && (
+                    <Link
+                      href={`/category/${categorySlug}`}
+                      className="text-xs font-semibold uppercase tracking-wider text-indigo-600 hover:underline"
+                    >
+                      {post.categoryName}
+                    </Link>
                   )}
-                  {post.tags.length > 0 && (
-                    <span>{post.tags.join(", ")}</span>
+                  {post.categoryName && !categorySlug && (
+                    <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                      {post.categoryName}
+                    </span>
                   )}
+                  <h2 className="text-xl font-bold text-gray-900 hover:text-indigo-600 transition-colors">
+                    <Link href={`/blog/${post.slug}`}>{post.title}</Link>
+                  </h2>
+                  {post.excerpt && (
+                    <p className="text-gray-600 text-sm leading-relaxed">{post.excerpt}</p>
+                  )}
+                  <div className="flex items-center gap-4 text-xs text-gray-400">
+                    {post.publishedAt && (
+                      <time dateTime={post.publishedAt}>
+                        {new Date(post.publishedAt).toLocaleDateString(undefined, {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                        })}
+                      </time>
+                    )}
+                    {post.tags.length > 0 && (
+                      <span>{post.tags.join(", ")}</span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       )}
     </div>

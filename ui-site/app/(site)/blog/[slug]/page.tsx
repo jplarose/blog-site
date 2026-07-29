@@ -2,9 +2,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import type { Post, LayoutTemplate } from "@/lib/api";
-import { postsApi, templatesApi } from "@/lib/api";
+import type { Category, Post, LayoutTemplate } from "@/lib/api";
+import { categoriesApi, postsApi, templatesApi } from "@/lib/api";
 import { renderTemplate } from "@/lib/render-template";
+import { buildPostMetadata } from "@/lib/metadata";
+import { resolveCategorySlug } from "@/lib/category-link";
 import PageViewRecorder from "@/components/PageViewRecorder";
 
 interface Props {
@@ -26,32 +28,7 @@ async function loadPost(slug: string): Promise<Post | null> {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
   const post = await loadPost(slug);
-
-  if (!post) return { title: "Post not found — BlogSite" };
-
-  const description = post.excerpt ?? undefined;
-  const ogImage = isValidHttpUrl(post.featuredImageUrl) ? [post.featuredImageUrl!] : undefined;
-
-  return {
-    title: `${post.title} — BlogSite`,
-    description,
-    openGraph: {
-      title: post.title,
-      description,
-      type: "article",
-      images: ogImage,
-    },
-  };
-}
-
-function isValidHttpUrl(value: string | undefined): boolean {
-  if (!value) return false;
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
+  return buildPostMetadata(post);
 }
 
 export default async function BlogPostPage({ params }: Props) {
@@ -68,6 +45,18 @@ export default async function BlogPostPage({ params }: Props) {
       template = await templatesApi.get(post.templateId);
     } catch {
       // fall through to default rendering
+    }
+  }
+
+  // Only the fallback rendering below links to the category — resolve its
+  // real slug (not the templated render path, which doesn't link at all).
+  let categorySlug: string | null = null;
+  if (!template && post.categoryId !== undefined) {
+    try {
+      const categories: Category[] = await categoriesApi.list();
+      categorySlug = resolveCategorySlug(categories, post.categoryId);
+    } catch {
+      // categorySlug stays null — renders as plain text below
     }
   }
 
@@ -97,13 +86,18 @@ export default async function BlogPostPage({ params }: Props) {
             </div>
           )}
           <header className="mb-8">
-            {post.categoryName && (
+            {post.categoryName && categorySlug && (
               <Link
-                href={`/category/${post.categoryName.toLowerCase()}`}
+                href={`/category/${categorySlug}`}
                 className="text-xs font-semibold uppercase tracking-wider text-indigo-600 hover:underline not-prose"
               >
                 {post.categoryName}
               </Link>
+            )}
+            {post.categoryName && !categorySlug && (
+              <span className="text-xs font-semibold uppercase tracking-wider text-gray-400 not-prose">
+                {post.categoryName}
+              </span>
             )}
             <h1 className="text-4xl font-bold mt-2">{post.title}</h1>
             <div className="flex gap-4 text-sm text-gray-400 mt-3 not-prose">
