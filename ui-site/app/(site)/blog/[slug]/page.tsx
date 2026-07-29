@@ -13,7 +13,11 @@ interface Props {
   params: Promise<{ slug: string }>;
 }
 
-async function loadPost(slug: string): Promise<Post | null> {
+/**
+ * Exported so the 404-vs-outage collapsing behavior described below can be
+ * unit-tested directly (issue #41) without rendering the server component.
+ */
+export async function loadPost(slug: string): Promise<Post | null> {
   try {
     return await postsApi.getBySlug(slug);
   } catch {

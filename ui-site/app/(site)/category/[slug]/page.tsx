@@ -10,15 +10,37 @@ interface Props {
   params: Promise<{ slug: string }>;
 }
 
+/**
+ * Resolves a category by slug. `category: null, failed: false` means the
+ * slug doesn't match any category (an unambiguous 404 — categories have no
+ * publish-visibility rule the way posts do). `failed: true` means the API
+ * call itself errored (outage), which the page renders as an error state
+ * rather than a 404. Exported so this distinction is unit-testable (#41)
+ * without rendering the server component.
+ */
+export async function loadCategory(slug: string): Promise<{ category: Category | null; failed: boolean }> {
+  try {
+    return { category: await categoriesApi.getBySlug(slug), failed: false };
+  } catch {
+    return { category: null, failed: true };
+  }
+}
+
+/** Same failed-vs-empty distinction as `loadCategory`, for a category's posts. */
+export async function loadCategoryPosts(
+  categoryId: number
+): Promise<{ posts: PostSummary[]; failed: boolean }> {
+  try {
+    const result = await postsApi.list({ categoryId, pageSize: 50 });
+    return { posts: result.posts, failed: false };
+  } catch {
+    return { posts: [], failed: true };
+  }
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-
-  let category: Category | null = null;
-  try {
-    category = await categoriesApi.getBySlug(slug);
-  } catch {
-    // fall through to a generic title; the page body will show the error state
-  }
+  const { category } = await loadCategory(slug);
 
   if (!category) return { title: "Category — BlogSite" };
 
@@ -31,13 +53,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function CategoryPage({ params }: Props) {
   const { slug } = await params;
 
-  let category: Category | null = null;
-  let categoryLoadFailed = false;
-  try {
-    category = await categoriesApi.getBySlug(slug);
-  } catch {
-    categoryLoadFailed = true;
-  }
+  const { category, failed: categoryLoadFailed } = await loadCategory(slug);
 
   if (categoryLoadFailed) {
     return (
@@ -53,14 +69,7 @@ export default async function CategoryPage({ params }: Props) {
   // visibility rule, so a missing category slug is unambiguously a 404.
   if (!category) return notFound();
 
-  let posts: PostSummary[] = [];
-  let postsLoadFailed = false;
-  try {
-    const result = await postsApi.list({ categoryId: category.id, pageSize: 50 });
-    posts = result.posts;
-  } catch {
-    postsLoadFailed = true;
-  }
+  const { posts, failed: postsLoadFailed } = await loadCategoryPosts(category.id);
 
   return (
     <div className="space-y-10">

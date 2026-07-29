@@ -316,3 +316,82 @@ describe("renderTemplate — seeded catalog templates", () => {
     expect(html).not.toContain("<img");
   });
 });
+
+// Every author-controlled plain-text field, rendered through every seed
+// template, must come out escaped — and the (already-sanitized) rich `content`
+// field must come out unchanged. This guards against a template-specific
+// regression (e.g. one seed template piping a token through unescaped) that
+// per-token unit tests above wouldn't catch.
+describe("renderTemplate — hostile content across every seed template", () => {
+  const hostilePost = post({
+    title: `<script>alert('title')</script>`,
+    content: '<p>Rich &amp; <b>safe</b> body</p>',
+    excerpt: `"><img src=x onerror=alert('excerpt')>`,
+    categoryName: `<svg onload=alert('category')>`,
+    tags: [`<img src=x onerror=alert('tag')>`, `Tom & "Jerry"`],
+    featuredImageUrl: "https://example.com/hero.png",
+  });
+
+  it.each([
+    ["article", ARTICLE_TEMPLATE],
+    ["feature", FEATURE_TEMPLATE],
+    ["photo-essay", PHOTO_ESSAY_TEMPLATE],
+  ])("escapes hostile title/excerpt/category/tags in the %s template", (_key, template) => {
+    const html = renderTemplate(template, hostilePost, "2026-06-15T12:00:00Z");
+
+    // No raw hostile markup made it into the output.
+    expect(html).not.toContain("<script>alert('title')</script>");
+    expect(html).not.toContain("onerror=alert('excerpt')");
+    expect(html).not.toContain("<svg onload=alert('category')>");
+    expect(html).not.toContain("onerror=alert('tag')");
+
+    // Escaped equivalents are present instead.
+    expect(html).toContain("&lt;script&gt;alert(&#39;title&#39;)&lt;/script&gt;");
+    expect(html).toContain("&lt;svg onload=alert(&#39;category&#39;)&gt;");
+    expect(html).toContain("&lt;img src=x onerror=alert(&#39;tag&#39;)&gt;");
+    expect(html).toContain("Tom &amp; &quot;Jerry&quot;");
+
+    // Rich `content` still passes through verbatim (sanitized at save time).
+    expect(html).toContain('<p>Rich &amp; <b>safe</b> body</p>');
+  });
+});
+
+describe("renderTemplate — hostile featuredImage variants never reach src, in every seed template", () => {
+  const hostileUrls: Array<[string, string]> = [
+    ["javascript: scheme", "javascript:alert(1)"],
+    ["data: scheme", "data:text/html,<script>alert(1)</script>"],
+    ["uppercase scheme", "JAVASCRIPT:alert(1)"],
+    ["mixed-case scheme", "JaVaScRiPt:alert(1)"],
+    ["tab-obfuscated scheme", "java\tscript:alert(1)"],
+    ["newline-obfuscated scheme", "java\nscript:alert(1)"],
+    ["leading-whitespace scheme", "   javascript:alert(1)"],
+    ["vbscript scheme", "vbscript:msgbox(1)"],
+  ];
+
+  it.each([
+    ["article", ARTICLE_TEMPLATE],
+    ["feature", FEATURE_TEMPLATE],
+    ["photo-essay", PHOTO_ESSAY_TEMPLATE],
+  ])("drops every hostile featuredImage scheme from the %s template's src", (_key, template) => {
+    for (const [, url] of hostileUrls) {
+      const html = renderTemplate(template, post({ featuredImageUrl: url }), undefined);
+      expect(html).not.toContain("javascript:");
+      expect(html).not.toContain("vbscript:");
+      expect(html).not.toContain("<script>alert(1)</script>");
+      expect(html).not.toContain('src="javascript');
+      expect(html).not.toContain("<img");
+    }
+  });
+
+  it("treats a protocol-relative featuredImage URL as a relative URL, not a scheme-based attack", () => {
+    // No `scheme:` prefix means the scheme-allowlist never triggers — the
+    // renderer only filters by URL *scheme*, not by host. This is not an
+    // XSS vector (no script execution), just image hotlinking, so it is
+    // intentionally allowed through.
+    const html = renderTemplate(
+      '<img src="{{featuredImage}}" />',
+      post({ featuredImageUrl: "//evil.example.com/hero.png" })
+    );
+    expect(html).toBe('<img src="//evil.example.com/hero.png" />');
+  });
+});

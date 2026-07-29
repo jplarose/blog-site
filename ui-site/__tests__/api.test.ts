@@ -85,6 +85,25 @@ describe("postsApi.list", () => {
 
     await expect(postsApi.list()).rejects.toThrow(/API error 500/);
   });
+
+  // Exclusion proof (#33/#41): the server already forces anonymous callers to
+  // Published-only content. These assertions prove the *client* asks for
+  // nothing that could weaken that — no credentials (cookies/certs an
+  // authenticated admin session might carry) and no auth header the caller
+  // could use to request non-Published posts. Combined with the server-side
+  // guarantee, this shows the public site has no path to unpublished content.
+  it("sends no credentials and no Authorization header", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([], { headers: { "X-Total-Count": "0" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await postsApi.list();
+
+    const options = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(options.credentials).toBeUndefined();
+    const headers = options.headers as Record<string, string> | undefined;
+    expect(headers?.Authorization).toBeUndefined();
+    expect(headers?.authorization).toBeUndefined();
+  });
 });
 
 describe("postsApi.getBySlug", () => {
@@ -116,6 +135,21 @@ describe("postsApi.getBySlug", () => {
     } catch (error) {
       expect(isNotFoundError(error)).toBe(true);
     }
+  });
+
+  // See the equivalent comment on postsApi.list above — same exclusion
+  // reasoning applies to the single-post detail route.
+  it("sends no credentials and no Authorization header", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 1, slug: "hello" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await postsApi.getBySlug("hello");
+
+    const options = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(options.credentials).toBeUndefined();
+    const headers = options.headers as Record<string, string> | undefined;
+    expect(headers?.Authorization).toBeUndefined();
+    expect(headers?.authorization).toBeUndefined();
   });
 });
 
