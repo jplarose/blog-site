@@ -164,4 +164,32 @@ describe("CategoriesManager", () => {
     await screen.findByText("News");
     expect(screen.queryByText(/default template/i)).not.toBeInTheDocument();
   });
+
+  it("removes the row and shows a stale-row notice when editing a category that 404s (deleted elsewhere)", async () => {
+    list.mockResolvedValue([news]);
+    update.mockRejectedValue(new ApiError(404, "API error 404: Category was not found."));
+    render(<CategoriesManager />);
+
+    await screen.findByText("News");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save category" }));
+
+    await waitFor(() => expect(screen.queryByText("News")).not.toBeInTheDocument());
+    expect(screen.getAllByText(/no longer exists/i).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("removes the row and shows a stale-row notice when deleting a category that 404s (already gone)", async () => {
+    list.mockResolvedValue([news]);
+    del.mockRejectedValue(new ApiError(404, "API error 404: Category was not found."));
+    render(<CategoriesManager />);
+
+    await screen.findByText("News");
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete category" }));
+
+    await waitFor(() => expect(screen.queryByText("News")).not.toBeInTheDocument());
+    expect(screen.getAllByText(/no longer exists/i).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
 });

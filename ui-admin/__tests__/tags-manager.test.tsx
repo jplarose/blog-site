@@ -131,4 +131,32 @@ describe("TagsManager", () => {
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/in use by 3 posts/i));
     expect(screen.getByText("Featured")).toBeInTheDocument();
   });
+
+  it("removes the row and shows a stale-row notice when editing a tag that 404s (deleted elsewhere)", async () => {
+    list.mockResolvedValue([featured]);
+    update.mockRejectedValue(new ApiError(404, "API error 404: Tag was not found."));
+    render(<TagsManager />);
+
+    await screen.findByText("Featured");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save tag" }));
+
+    await waitFor(() => expect(screen.queryByText("Featured")).not.toBeInTheDocument());
+    expect(screen.getAllByText(/no longer exists/i).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("removes the row and shows a stale-row notice when deleting a tag that 404s (already gone)", async () => {
+    list.mockResolvedValue([featured]);
+    del.mockRejectedValue(new ApiError(404, "API error 404: Tag was not found."));
+    render(<TagsManager />);
+
+    await screen.findByText("Featured");
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete tag" }));
+
+    await waitFor(() => expect(screen.queryByText("Featured")).not.toBeInTheDocument());
+    expect(screen.getAllByText(/no longer exists/i).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
 });

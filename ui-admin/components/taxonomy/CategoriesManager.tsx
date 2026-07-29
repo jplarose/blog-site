@@ -6,7 +6,7 @@ import ConfirmDeleteTaxonomyDialog from "@/components/taxonomy/ConfirmDeleteTaxo
 import TaxonomyFormModal, { type TaxonomyFormValues } from "@/components/taxonomy/TaxonomyFormModal";
 import TaxonomyTable from "@/components/taxonomy/TaxonomyTable";
 import { ApiError, categoriesApi, type Category } from "@/lib/api";
-import { friendlyErrorMessage } from "@/lib/taxonomy/errorMessage";
+import { friendlyErrorMessage, staleRowMessage } from "@/lib/taxonomy/errorMessage";
 
 type DialogState =
   | { kind: "none" }
@@ -34,6 +34,9 @@ export default function CategoriesManager() {
   // re-parsing the API's generic message, keeping this message visibly
   // distinct from the duplicate-name/slug 409 shown on save.
   const [deleteConflict, setDeleteConflict] = useState(false);
+  // Surfaces the "row no longer exists" case for an update/delete that 404s
+  // because someone else deleted it between the list load and the action.
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let isActive = true;
@@ -87,7 +90,16 @@ export default function CategoriesManager() {
       setCategories((current) => current.map((item) => (item.id === updated.id ? updated : item)));
       closeDialog();
     } catch (error) {
-      setDialogError(friendlyErrorMessage(error, "Failed to update the category."));
+      if (error instanceof ApiError && error.status === 404) {
+        // The row was deleted elsewhere between the list load and this
+        // edit; drop it locally and tell the user instead of showing a
+        // dead-end "not found" error on a form for a row that's gone.
+        setCategories((current) => current.filter((item) => item.id !== category.id));
+        closeDialog();
+        setNotice(staleRowMessage("category", category.name));
+      } else {
+        setDialogError(friendlyErrorMessage(error, "Failed to update the category."));
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -104,6 +116,11 @@ export default function CategoriesManager() {
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
         setDeleteConflict(true);
+      } else if (error instanceof ApiError && error.status === 404) {
+        // Already gone — the delete the user wanted is effectively done.
+        setCategories((current) => current.filter((item) => item.id !== category.id));
+        closeDialog();
+        setNotice(staleRowMessage("category", category.name));
       } else {
         setDialogError(friendlyErrorMessage(error, "Failed to delete the category."));
       }
@@ -121,12 +138,23 @@ export default function CategoriesManager() {
         </div>
         <button
           type="button"
-          onClick={() => setDialog({ kind: "create" })}
+          onClick={() => {
+            setNotice(null);
+            setDialog({ kind: "create" });
+          }}
           className="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors"
         >
           + New Category
         </button>
       </div>
+
+      <div aria-live="polite" className="sr-only">
+        {notice}
+      </div>
+
+      {notice ? (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">{notice}</div>
+      ) : null}
 
       {listError ? (
         <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
@@ -140,11 +168,17 @@ export default function CategoriesManager() {
           showDescription
           onEdit={(row) => {
             const category = categories.find((item) => item.id === row.id);
-            if (category) setDialog({ kind: "edit", category });
+            if (category) {
+              setNotice(null);
+              setDialog({ kind: "edit", category });
+            }
           }}
           onDelete={(row) => {
             const category = categories.find((item) => item.id === row.id);
-            if (category) setDialog({ kind: "delete", category });
+            if (category) {
+              setNotice(null);
+              setDialog({ kind: "delete", category });
+            }
           }}
         />
       )}
