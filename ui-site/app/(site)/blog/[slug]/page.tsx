@@ -1,38 +1,71 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import type { Post, LayoutTemplate } from "@/lib/api";
+import { postsApi, templatesApi } from "@/lib/api";
 import { renderTemplate } from "@/lib/render-template";
+import PageViewRecorder from "@/components/PageViewRecorder";
 
 interface Props {
   params: Promise<{ slug: string }>;
 }
 
+async function loadPost(slug: string): Promise<Post | null> {
+  try {
+    return await postsApi.getBySlug(slug);
+  } catch {
+    // A 404 means the post doesn't exist, or exists but isn't Published to
+    // this (anonymous) caller (#33) — either way it's a public 404. Any
+    // other error (API outage, network failure) also has no meaningful post
+    // to render, so it 404s too rather than crashing the route.
+    return null;
+  }
+}
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { slug } = await params;
+  const post = await loadPost(slug);
+
+  if (!post) return { title: "Post not found — BlogSite" };
+
+  const description = post.excerpt ?? undefined;
+  const ogImage = isValidHttpUrl(post.featuredImageUrl) ? [post.featuredImageUrl!] : undefined;
+
+  return {
+    title: `${post.title} — BlogSite`,
+    description,
+    openGraph: {
+      title: post.title,
+      description,
+      type: "article",
+      images: ogImage,
+    },
+  };
+}
+
+function isValidHttpUrl(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export default async function BlogPostPage({ params }: Props) {
   const { slug } = await params;
-  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
-
-  let post: Post | null = null;
-  try {
-    const res = await fetch(`${apiBase}/api/posts/slug/${slug}`, {
-      next: { revalidate: 60 },
-    });
-    if (res.status === 404) return notFound();
-    if (res.ok) post = await res.json();
-  } catch {
-    // API unavailable
-  }
+  const post = await loadPost(slug);
 
   if (!post) return notFound();
 
-  // Load template (post-level or category-default)
+  // Load the post's fixed-catalog template (#39). Falls through to the
+  // default rendering below if the template can't be loaded.
   let template: LayoutTemplate | null = null;
   if (post.templateId) {
     try {
-      const res = await fetch(`${apiBase}/api/layouttemplates/${post.templateId}`, {
-        next: { revalidate: 300 },
-      });
-      if (res.ok) template = await res.json();
+      template = await templatesApi.get(post.templateId);
     } catch {
       // fall through to default rendering
     }
@@ -40,6 +73,7 @@ export default async function BlogPostPage({ params }: Props) {
 
   return (
     <article>
+      <PageViewRecorder postId={post.id} />
       {template ? (
         <>
           <style dangerouslySetInnerHTML={{ __html: template.cssStyles }} />

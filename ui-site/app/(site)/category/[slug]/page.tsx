@@ -1,53 +1,88 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import type { Category, PostSummary } from "@/lib/api";
+import { categoriesApi, postsApi } from "@/lib/api";
+import PageViewRecorder from "@/components/PageViewRecorder";
 
 interface Props {
   params: Promise<{ slug: string }>;
 }
 
-export default async function CategoryPage({ params }: Props) {
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
   let category: Category | null = null;
-  let posts: PostSummary[] = [];
-
   try {
-    const [catsRes, postsRes] = await Promise.all([
-      fetch(`${apiBase}/api/categories`, { next: { revalidate: 60 } }),
-      fetch(`${apiBase}/api/posts?status=Published`, { next: { revalidate: 60 } }),
-    ]);
-
-    if (catsRes.ok) {
-      const cats: Category[] = await catsRes.json();
-      category = cats.find((c) => c.slug === slug) ?? null;
-    }
-
-    if (postsRes.ok) {
-      const allPosts: PostSummary[] = await postsRes.json();
-      posts = category
-        ? allPosts.filter((p) => p.categoryId === category!.id)
-        : [];
-    }
+    category = await categoriesApi.getBySlug(slug);
   } catch {
-    // API unavailable
+    // fall through to a generic title; the page body will show the error state
   }
 
+  if (!category) return { title: "Category — BlogSite" };
+
+  return {
+    title: `${category.name} — BlogSite`,
+    description: category.description ?? `Posts in ${category.name}`,
+  };
+}
+
+export default async function CategoryPage({ params }: Props) {
+  const { slug } = await params;
+
+  let category: Category | null = null;
+  let categoryLoadFailed = false;
+  try {
+    category = await categoriesApi.getBySlug(slug);
+  } catch {
+    categoryLoadFailed = true;
+  }
+
+  if (categoryLoadFailed) {
+    return (
+      <div className="rounded-xl border border-dashed border-red-300 p-12 text-center text-red-500">
+        <p className="text-lg">Something went wrong loading this category.</p>
+        <p className="mt-1 text-sm">Please try again later.</p>
+      </div>
+    );
+  }
+
+  // The API distinguishes "post exists but isn't Published" (404 on the post
+  // routes) from "category doesn't exist" — categories have no such
+  // visibility rule, so a missing category slug is unambiguously a 404.
   if (!category) return notFound();
+
+  let posts: PostSummary[] = [];
+  let postsLoadFailed = false;
+  try {
+    const result = await postsApi.list({ categoryId: category.id, pageSize: 50 });
+    posts = result.posts;
+  } catch {
+    postsLoadFailed = true;
+  }
 
   return (
     <div className="space-y-10">
+      <PageViewRecorder />
       <section>
         <h1 className="text-3xl font-bold text-gray-900">{category.name}</h1>
         {category.description && (
           <p className="mt-2 text-gray-500">{category.description}</p>
         )}
-        <p className="mt-1 text-sm text-gray-400">{posts.length} post{posts.length !== 1 ? "s" : ""}</p>
+        {!postsLoadFailed && (
+          <p className="mt-1 text-sm text-gray-400">
+            {posts.length} post{posts.length !== 1 ? "s" : ""}
+          </p>
+        )}
       </section>
 
-      {posts.length === 0 ? (
+      {postsLoadFailed ? (
+        <div className="rounded-xl border border-dashed border-red-300 p-12 text-center text-red-500">
+          <p className="text-lg">Something went wrong loading posts.</p>
+          <p className="mt-1 text-sm">Please try again later.</p>
+        </div>
+      ) : posts.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center text-gray-400">
           No posts in this category yet.
         </div>

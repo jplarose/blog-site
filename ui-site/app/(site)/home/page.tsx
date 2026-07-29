@@ -1,28 +1,40 @@
 import Image from "next/image";
 import Link from "next/link";
+import type { Metadata } from "next";
 import type { PostSummary } from "@/lib/api";
+import { postsApi } from "@/lib/api";
+import PageViewRecorder from "@/components/PageViewRecorder";
+
+export const metadata: Metadata = {
+  title: "BlogSite — Latest Posts",
+  description: "Thoughts, tutorials, and ideas.",
+};
 
 export default async function HomePage() {
   let posts: PostSummary[] = [];
+  let loadFailed = false;
 
   try {
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000"}/api/posts?status=Published`,
-      { next: { revalidate: 60 } }
-    );
-    if (res.ok) posts = await res.json();
+    const result = await postsApi.list();
+    posts = result.posts;
   } catch {
-    // API not available — render empty state
+    loadFailed = true;
   }
 
   return (
     <div className="space-y-10">
+      <PageViewRecorder />
       <section>
         <h1 className="text-3xl font-bold text-gray-900">Latest Posts</h1>
         <p className="mt-2 text-gray-500">Thoughts, tutorials, and ideas.</p>
       </section>
 
-      {posts.length === 0 ? (
+      {loadFailed ? (
+        <div className="rounded-xl border border-dashed border-red-300 p-12 text-center text-red-500">
+          <p className="text-lg">Something went wrong loading posts.</p>
+          <p className="mt-1 text-sm">Please try again later.</p>
+        </div>
+      ) : posts.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center text-gray-400">
           <p className="text-lg">No posts published yet.</p>
           <p className="mt-1 text-sm">Check back soon!</p>
