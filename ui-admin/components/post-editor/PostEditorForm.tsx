@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import ImageUploadControl from "@/components/media/ImageUploadControl";
 import RichTextEditor from "@/components/rte/RichTextEditor";
+import { richTextJsonToHtml, richTextToHtml } from "@/components/rte/toHtml";
 import TagSelector from "@/components/post-editor/TagSelector";
 import TemplateCards from "@/components/post-editor/TemplateCards";
 import TemplatePreview from "@/components/post-editor/TemplatePreview";
@@ -165,7 +166,11 @@ export default function PostEditorForm({
     const payload = {
       title: title.trim(),
       slug: slugify(title),
-      content,
+      // The wire contract for `content` is sanitized rich HTML (the API
+      // sanitizes HTML, the public site renders HTML). `content` state is
+      // already HTML after any edit; this also normalizes untouched legacy
+      // values (Tiptap JSON / plain text) loaded from older rows.
+      content: richTextToHtml(content),
       excerpt: excerpt.trim() || undefined,
       status: nextStatus,
       categoryId: selectedCategoryId ? Number(selectedCategoryId) : undefined,
@@ -279,7 +284,7 @@ export default function PostEditorForm({
                   initialContent={content}
                   placeholder="Write your post content here… Markdown links and spoiler syntax are supported."
                   ariaLabel="Post content"
-                  onChange={(json) => setContent(JSON.stringify(json))}
+                  onChange={(json) => setContent(richTextJsonToHtml(json))}
                   className="min-h-[480px]"
                 />
               </div>

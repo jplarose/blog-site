@@ -42,10 +42,21 @@ function isJsonContent(value: string): boolean {
 }
 
 /**
- * Converts a post's stored `content` field (either a serialized Tiptap
- * JSON document, or legacy plain text) into sanitized display HTML.
- * Shared by `RichTextContent` (post detail/list views) and the template
- * preview (post editor).
+ * Converts a Tiptap editor document into sanitized rich HTML. This is the
+ * wire format for a post's `content` field: the admin submits HTML, the API
+ * sanitizes HTML (issue #34), and the public site renders HTML verbatim
+ * through its templates.
+ */
+export function richTextJsonToHtml(json: JSONContent): string {
+  return sanitizeHtml(generateHTML(json, READ_EXTENSIONS));
+}
+
+/**
+ * Converts a post's `content` field into sanitized display HTML. Accepts
+ * the canonical stored shape (sanitized rich HTML), a serialized Tiptap
+ * JSON document (in-editor state / legacy rows), or legacy plain text.
+ * Shared by `RichTextContent` (post detail/list views), the template
+ * preview, and the post editor's save path.
  */
 export function richTextToHtml(content: string | null | undefined): string {
   if (!content) {
@@ -56,10 +67,15 @@ export function richTextToHtml(content: string | null | undefined): string {
   if (isJsonContent(trimmedContent)) {
     try {
       const json: JSONContent = JSON.parse(trimmedContent);
-      return sanitizeHtml(generateHTML(json, READ_EXTENSIONS));
+      return richTextJsonToHtml(json);
     } catch {
       return sanitizeHtml(`<p>${content}</p>`);
     }
+  }
+
+  if (trimmedContent.startsWith("<")) {
+    // Already rich HTML (the canonical stored format) — sanitize, don't escape.
+    return sanitizeHtml(content);
   }
 
   const escaped = content
