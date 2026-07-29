@@ -11,6 +11,14 @@ export interface TemplateTokenValues {
   /** Rich post body HTML. Rendered verbatim (not escaped) — the API sanitizes it at save. */
   content: string;
   excerpt: string;
+  /**
+   * Featured-image URL. NOTE: unlike `ui-site/lib/render-template.ts`, this
+   * renderer does NOT scheme-filter the URL (no javascript:/data: check).
+   * That is safe only because the sole consumer, `TemplatePreview`, renders
+   * the output inside a fully sandboxed iframe (`sandbox=""` — no scripts,
+   * no same-origin). Do not reuse this renderer anywhere that injects into
+   * the live admin DOM without adding the scheme filter.
+   */
   featuredImage: string;
   publishedAt: string;
   category: string;
