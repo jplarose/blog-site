@@ -140,4 +140,48 @@ describe("PostRowActions", () => {
     await waitFor(() => expect(onDeleted).toHaveBeenCalledWith(1));
     expect(del).toHaveBeenCalledWith(1);
   });
+
+  it("returns focus to the Schedule trigger button after cancelling the schedule dialog", () => {
+    renderActions();
+    const scheduleTrigger = screen.getByRole("button", { name: "Schedule" });
+    scheduleTrigger.focus();
+
+    fireEvent.click(scheduleTrigger);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(scheduleTrigger).toHaveFocus();
+  });
+
+  it("returns focus to the Delete trigger button after cancelling the delete dialog", () => {
+    renderActions();
+    const deleteTrigger = screen.getByRole("button", { name: "Delete" });
+    deleteTrigger.focus();
+
+    fireEvent.click(deleteTrigger);
+    const dialog = screen.getByRole("dialog");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(deleteTrigger).toHaveFocus();
+  });
+
+  it("traps Tab focus within the open delete dialog", () => {
+    renderActions();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const dialog = screen.getByRole("dialog");
+    const cancelButton = within(dialog).getByRole("button", { name: "Cancel" });
+    const deletePostButton = within(dialog).getByRole("button", { name: "Delete post" });
+
+    // Modal focuses the first focusable element (Cancel) on open.
+    expect(cancelButton).toHaveFocus();
+
+    deletePostButton.focus();
+    fireEvent.keyDown(document, { key: "Tab" });
+
+    expect(cancelButton).toHaveFocus();
+  });
 });
