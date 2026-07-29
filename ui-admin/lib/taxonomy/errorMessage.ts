@@ -1,24 +1,10 @@
-import { ApiError } from "@/lib/api";
-
-/** Statuses whose body is the service's own user-facing message. */
-const PASS_THROUGH_STATUSES = new Set([400, 404, 409]);
-
 /**
- * Strips the `apiFetch`-added "API error NNN: " prefix from 400/404/409
- * responses so the service's own validation/not-found/duplicate/referenced
- * message reaches the user verbatim — this covers the full failure matrix
- * (invalid payload, missing id, duplicate name/slug, referenced-delete).
- * Other statuses fall back to a generic message so unexpected server
- * errors don't leak internals.
+ * Re-exported from `lib/errorMessage.ts` (extracted from here in #43 so
+ * non-taxonomy features, e.g. the dashboard/analytics pages, can share the
+ * same safe-status-passthrough logic without an odd `lib/taxonomy` import).
+ * Kept re-exported here so existing taxonomy callers are unaffected.
  */
-export function friendlyErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof ApiError) {
-    return PASS_THROUGH_STATUSES.has(error.status)
-      ? error.message.replace(/^API error \d+: /, "") || fallback
-      : fallback;
-  }
-  return error instanceof Error ? error.message : fallback;
-}
+export { friendlyErrorMessage } from "@/lib/errorMessage";
 
 /**
  * Copy shown when an update/delete 404s because the row was already

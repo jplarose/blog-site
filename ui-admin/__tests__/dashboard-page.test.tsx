@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import DashboardPage from "@/app/(admin)/dashboard/page";
-import type { AnalyticsSummary } from "@/lib/api";
+import { ApiError, type AnalyticsSummary } from "@/lib/api";
 
 const summary = vi.fn();
 
@@ -63,6 +63,19 @@ describe("DashboardPage", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Network unreachable");
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("shows a generic message for a 500 ApiError, never the raw backend body", async () => {
+    summary.mockRejectedValue(
+      new ApiError(500, "API error 500: Unhandled exception at AnalyticsController line 42"),
+    );
+
+    render(<DashboardPage />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Failed to load analytics.");
+    expect(alert.textContent).not.toContain("Unhandled exception");
+    expect(alert.textContent).not.toContain("AnalyticsController");
   });
 
   it("retries the summary request when Retry is clicked", async () => {

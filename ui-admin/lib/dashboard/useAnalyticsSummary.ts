@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { analyticsApi, type AnalyticsSummary } from "@/lib/api";
+import { friendlyErrorMessage } from "@/lib/errorMessage";
 
 export type AnalyticsSummaryState =
   | { status: "loading" }
@@ -37,7 +38,7 @@ export function useAnalyticsSummary(days = 30) {
         if (!isActive) return;
         setState({
           status: "error",
-          message: error instanceof Error ? error.message : "Failed to load analytics.",
+          message: friendlyErrorMessage(error, "Failed to load analytics."),
         });
       }
     }

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import AnalyticsPage from "@/app/(admin)/analytics/page";
-import type { AnalyticsSummary } from "@/lib/api";
+import { ApiError, type AnalyticsSummary } from "@/lib/api";
 
 const summary = vi.fn();
 
@@ -75,5 +75,18 @@ describe("AnalyticsPage", () => {
 
     await waitFor(() => expect(summary).toHaveBeenCalledTimes(2));
     expect(await screen.findByText("1500")).toBeInTheDocument();
+  });
+
+  it("shows a generic message for a 500 ApiError, never the raw backend body", async () => {
+    summary.mockRejectedValue(
+      new ApiError(500, "API error 500: Unhandled exception at AnalyticsController line 42"),
+    );
+
+    render(<AnalyticsPage />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Failed to load analytics.");
+    expect(alert.textContent).not.toContain("Unhandled exception");
+    expect(alert.textContent).not.toContain("AnalyticsController");
   });
 });
