@@ -57,6 +57,25 @@ describe("proxyApiRequest", () => {
     );
   });
 
+  it("forwards the X-Total-Count header to the browser so list pagination works", async () => {
+    const { proxyApiRequest } = await import("@/lib/api-proxy");
+    const backendFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([{ id: 1 }]), {
+        status: 200,
+        headers: { "content-type": "application/json", "X-Total-Count": "37" },
+      }),
+    );
+    vi.stubGlobal("fetch", backendFetch);
+
+    const request = new Request("http://localhost/api/posts?page=1&pageSize=20", {
+      method: "GET",
+    });
+
+    const response = await proxyApiRequest(request, "/api/posts");
+
+    expect(response.headers.get("x-total-count")).toBe("37");
+  });
+
   it("sets Authorization from the access token cookie and does not forward the cookie header", async () => {
     const { proxyApiRequest } = await import("@/lib/api-proxy");
     const backendFetch = vi.fn().mockResolvedValue(
