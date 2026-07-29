@@ -338,12 +338,30 @@ internal sealed class FakeAnalyticsRepository : IAnalyticsRepository
         return Task.FromResult(Result);
     }
 
+    /// <summary>Number of times <see cref="RecordPageViewAsync"/> was called.</summary>
+    public int RecordedPageViews { get; private set; }
+
+    /// <summary>Last postId passed to <see cref="RecordPageViewAsync"/>.</summary>
+    public int? CapturedPostId { get; private set; }
+
+    /// <summary>Last path passed to <see cref="RecordPageViewAsync"/>.</summary>
+    public string? CapturedPath { get; private set; }
+
+    /// <summary>Last referrer passed to <see cref="RecordPageViewAsync"/>.</summary>
+    public string? CapturedReferrer { get; private set; }
+
     public Task RecordPageViewAsync(
         int? postId,
         string path,
         string? ipAddress,
         string? userAgent,
         string? referrer,
-        CancellationToken cancellationToken) =>
-        Task.CompletedTask;
+        CancellationToken cancellationToken)
+    {
+        RecordedPageViews++;
+        CapturedPostId = postId;
+        CapturedPath = path;
+        CapturedReferrer = referrer;
+        return Task.CompletedTask;
+    }
 }

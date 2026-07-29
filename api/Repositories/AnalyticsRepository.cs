@@ -127,6 +127,14 @@ public sealed class AnalyticsRepository(IDbConnection db) : IAnalyticsRepository
                     row.ViewCount))));
     }
 
+    /// <summary>
+    /// Inserts a page view. An unknown <paramref name="postId"/> is
+    /// tolerated by resolving it through a subselect against
+    /// <c>posts.id</c>: a bogus or stale id records as a post-less view
+    /// (<c>post_id IS NULL</c>) instead of raising an FK violation — the
+    /// sender is an anonymous public client whose payload must never be
+    /// able to 500 this endpoint.
+    /// </summary>
     public async Task RecordPageViewAsync(
         int? postId,
         string path,
@@ -144,7 +152,7 @@ public sealed class AnalyticsRepository(IDbConnection db) : IAnalyticsRepository
                 referrer
             )
             VALUES (
-                @PostId,
+                (SELECT id FROM posts WHERE id = @PostId),
                 @Path,
                 @IpAddress,
                 @UserAgent,
