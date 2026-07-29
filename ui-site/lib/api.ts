@@ -10,6 +10,9 @@ export interface PostSummary {
   publishedAt?: string;
   categoryId?: number;
   categoryName?: string;
+  templateId?: number;
+  templateKey?: string;
+  templateName?: string;
   tags: string[];
   createdAt: string;
   updatedAt: string;
@@ -27,6 +30,7 @@ export interface Post {
   categoryId?: number;
   categoryName?: string;
   templateId?: number;
+  templateKey?: string;
   templateName?: string;
   tags: string[];
   createdAt: string;
@@ -38,22 +42,23 @@ export interface Category {
   name: string;
   slug: string;
   description?: string;
-  defaultTemplateId?: number;
-  defaultTemplateName?: string;
   postCount: number;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface LayoutTemplate {
+/** List view of a fixed catalog template, as returned by `GET /api/layouttemplates`. */
+export interface LayoutTemplateSummary {
   id: number;
+  templateKey: string;
   name: string;
   description: string;
+}
+
+/** Full catalog template, as returned by `GET /api/layouttemplates/{id}`. */
+export interface LayoutTemplate extends LayoutTemplateSummary {
   htmlStructure: string;
   cssStyles: string;
-  isDefault: boolean;
-  createdAt: string;
-  updatedAt: string;
 }
 
 async function apiFetch<T>(path: string): Promise<T> {
@@ -65,11 +70,12 @@ async function apiFetch<T>(path: string): Promise<T> {
 }
 
 export const postsApi = {
+  // categorySlug is accepted but not yet applied as a server-side filter;
+  // wiring it up is #40's concern. This intentionally drops the previous
+  // dead `&tag=` query fragment, which never filtered by category.
   listPublished: (categorySlug?: string) => {
-    const qs = categorySlug
-      ? `?status=Published&tag=` // extend with category filter as needed
-      : "?status=Published";
-    return apiFetch<PostSummary[]>(`/api/posts${qs}`);
+    void categorySlug;
+    return apiFetch<PostSummary[]>("/api/posts?status=Published");
   },
   getBySlug: (slug: string) =>
     apiFetch<Post>(`/api/posts/slug/${slug}`),
@@ -95,36 +101,4 @@ export function recordPageView(postId: number | null, path: string, referrer?: s
   }).catch(() => {
     // fire-and-forget — analytics failures must not break the page
   });
-}
-
-/**
- * Render a template by replacing {{variable}} placeholders with post data.
- */
-export function renderTemplate(
-  htmlStructure: string,
-  post: Post,
-  publishedAt?: string
-): string {
-  return htmlStructure
-    .replace(/\{\{title\}\}/g, escapeHtml(post.title))
-    .replace(/\{\{content\}\}/g, post.content) // content is already HTML / markdown
-    .replace(/\{\{excerpt\}\}/g, escapeHtml(post.excerpt ?? ""))
-    .replace(/\{\{publishedAt\}\}/g, publishedAt ? new Date(publishedAt).toLocaleDateString() : "")
-    .replace(/\{\{category\}\}/g, escapeHtml(post.categoryName ?? ""))
-    .replace(/\{\{tags\}\}/g, post.tags.map(escapeHtml).join(", "))
-    .replace(/\{\{featuredImage\}\}/g, post.featuredImageUrl ?? "")
-    .replace(/\{\{#featuredImage\}\}[\s\S]*?\{\{\/featuredImage\}\}/g, (match) =>
-      post.featuredImageUrl
-        ? match.replace(/\{\{#featuredImage\}\}/, "").replace(/\{\{\/featuredImage\}\}/, "")
-        : ""
-    );
-}
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
 }

@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Post, LayoutTemplate } from "@/lib/api";
-import { renderTemplate } from "@/lib/api";
+import { renderTemplate } from "@/lib/render-template";
 
 interface Props {
   params: Promise<{ slug: string }>;
