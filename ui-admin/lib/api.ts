@@ -71,6 +71,8 @@ export interface AnalyticsSummary {
   totalPosts: number;
   publishedPosts: number;
   draftPosts: number;
+  scheduledPosts: number;
+  archivedPosts: number;
   topPosts: { postId: number; title: string; slug: string; viewCount: number }[];
   dailyViews: { date: string; viewCount: number }[];
 }

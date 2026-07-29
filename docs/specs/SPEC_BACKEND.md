@@ -232,11 +232,18 @@ DELETE /api/posts/{id}             — delete post [admin]
 ### Analytics
 
 ```
-GET /api/analytics/summary   — 30-day dashboard summary [admin]: views, unique visitors, post-state counts, daily views, top posts
-POST /api/analytics/pageview — record a page view (public, called by ui-site)
+GET /api/analytics/summary?days=30 — dashboard summary [admin]: views, unique visitors, post-state counts, daily views, top posts
+POST /api/analytics/pageview       — record a page view (public, called by ui-site)
 ```
 
-Exact response shape and query implementation: issue #34.
+Finalized contract (issue #42) — dashboard-ready with no client-side aggregation required:
+
+- **Range validation**: `days` must be `1 ≤ days ≤ 365`; out-of-range values return `400` with a clear message. Default `30`.
+- **`AnalyticsSummaryDto` shape**: `TotalPageViews`, `UniqueVisitors`, `TotalPosts`, `PublishedPosts`, `DraftPosts`, `ScheduledPosts`, `ArchivedPosts` (all four post states plus total), `TopPosts` (`PostId`/`Title`/`Slug`/`ViewCount`), `DailyViews` (`Date`/`ViewCount`).
+- **Window semantics**: the window is a UTC *calendar-date* range, not a moving instant. `Since = today_utc - (days - 1)`, `Until = today_utc` (inclusive) — so `days=30` means today plus the previous 29 days. Totals, top posts, and the daily series all use this same boundary (`viewed_at >= Since AND viewed_at < Until + 1 day`), so they can never disagree with each other.
+- **Daily series**: always contiguous and exactly `days` entries long, oldest to newest, zero-filled for days with no views (gap-filling happens in C# after an indexed, grouped SQL query — see `AnalyticsAggregation.BuildDailySeries`). An empty period returns an all-zero series, never a short or empty one.
+- **Top posts**: fixed limit of 5, ordered by `ViewCount` descending with `PostId` ascending as a deterministic tiebreak (`AnalyticsAggregation.RankTopPosts`). Only counts views of posts that still exist (inner join to `posts`). Empty period returns `[]`, never `null`.
+- **Post-state counts**: one `GROUP BY status` query against `posts`, not four separate scans; `TotalPosts` is the sum of the four state counts.
 
 ---
 

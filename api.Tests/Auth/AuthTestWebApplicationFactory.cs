@@ -24,6 +24,8 @@ internal sealed class AuthTestWebApplicationFactory : WebApplicationFactory<Prog
 
     public FakeTagRepository TagRepository { get; } = new();
 
+    public FakeAnalyticsRepository AnalyticsRepository { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
@@ -46,7 +48,7 @@ internal sealed class AuthTestWebApplicationFactory : WebApplicationFactory<Prog
             services.AddSingleton<ILayoutTemplateRepository>(new FakeLayoutTemplateRepository());
 
             services.RemoveAll<IAnalyticsRepository>();
-            services.AddSingleton<IAnalyticsRepository>(new FakeAnalyticsRepository());
+            services.AddSingleton<IAnalyticsRepository>(AnalyticsRepository);
         });
     }
 }

@@ -6,6 +6,8 @@ public record AnalyticsSummaryDto(
     int TotalPosts,
     int PublishedPosts,
     int DraftPosts,
+    int ScheduledPosts,
+    int ArchivedPosts,
     IEnumerable<TopPostDto> TopPosts,
     IEnumerable<DailyViewDto> DailyViews
 );

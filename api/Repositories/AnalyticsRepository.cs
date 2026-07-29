@@ -1,3 +1,4 @@
+using BlogSite.Api.Common;
 using BlogSite.Api.DTOs;
 using Dapper;
 using System.Data;
@@ -7,7 +8,7 @@ namespace BlogSite.Api.Repositories;
 public interface IAnalyticsRepository
 {
     Task<AnalyticsSummaryDto> GetSummaryAsync(
-        DateTime since,
+        AnalyticsWindow window,
         CancellationToken cancellationToken);
     Task RecordPageViewAsync(
         int? postId,
@@ -20,37 +21,37 @@ public interface IAnalyticsRepository
 
 public sealed class AnalyticsRepository(IDbConnection db) : IAnalyticsRepository
 {
+    /// <summary>
+    /// Loads the dashboard summary for <paramref name="window"/>. Every
+    /// windowed query uses the same half-open UTC range
+    /// (<c>viewed_at &gt;= @Since AND viewed_at &lt; @UntilExclusive</c>) so
+    /// totals, top posts, and the daily series all agree on the same
+    /// boundary as the date-grouped rows. Post-state counts come from a
+    /// single <c>GROUP BY status</c> query rather than four separate scans.
+    /// Gap-filling the daily series and ranking/limiting top posts happen in
+    /// C# (<see cref="AnalyticsAggregation"/>) after these indexed, grouped
+    /// queries return.
+    /// </summary>
     public async Task<AnalyticsSummaryDto> GetSummaryAsync(
-        DateTime since,
+        AnalyticsWindow window,
         CancellationToken cancellationToken)
     {
         const string totalsSql = """
             SELECT
-                (
-                    SELECT COUNT(*)::int
-                    FROM page_views
-                    WHERE viewed_at >= @Since
-                ) AS TotalPageViews,
-                (
-                    SELECT COUNT(DISTINCT ip_address)::int
-                    FROM page_views
-                    WHERE viewed_at >= @Since
-                        AND ip_address IS NOT NULL
-                ) AS UniqueVisitors,
-                (
-                    SELECT COUNT(*)::int
-                    FROM posts
-                ) AS TotalPosts,
-                (
-                    SELECT COUNT(*)::int
-                    FROM posts
-                    WHERE status = 'Published'
-                ) AS PublishedPosts,
-                (
-                    SELECT COUNT(*)::int
-                    FROM posts
-                    WHERE status = 'Draft'
-                ) AS DraftPosts;
+                COUNT(*)::int AS TotalPageViews,
+                COUNT(DISTINCT ip_address)
+                    FILTER (WHERE ip_address IS NOT NULL)::int AS UniqueVisitors
+            FROM page_views
+            WHERE viewed_at >= @Since
+                AND viewed_at < @UntilExclusive;
+            """;
+
+        const string statusCountsSql = """
+            SELECT
+                status AS Status,
+                COUNT(*)::int AS Count
+            FROM posts
+            GROUP BY status;
             """;
 
         const string topPostsSql = """
@@ -63,12 +64,11 @@ public sealed class AnalyticsRepository(IDbConnection db) : IAnalyticsRepository
             INNER JOIN posts AS post
                 ON post.id = page_view.post_id
             WHERE page_view.viewed_at >= @Since
+                AND page_view.viewed_at < @UntilExclusive
             GROUP BY
                 post.id,
                 post.title,
-                post.slug
-            ORDER BY ViewCount DESC
-            LIMIT 10;
+                post.slug;
             """;
 
         const string dailyViewsSql = """
@@ -77,17 +77,22 @@ public sealed class AnalyticsRepository(IDbConnection db) : IAnalyticsRepository
                 COUNT(*)::int AS ViewCount
             FROM page_views AS page_view
             WHERE page_view.viewed_at >= @Since
-            GROUP BY page_view.viewed_at::date
-            ORDER BY Date;
+                AND page_view.viewed_at < @UntilExclusive
+            GROUP BY page_view.viewed_at::date;
             """;
 
-        var parameters = new { Since = since };
-        var totals = await db.QuerySingleAsync<AnalyticsTotals>(
+        var parameters = new { Since = window.SinceUtc, UntilExclusive = window.UntilExclusiveUtc };
+
+        var totals = await db.QuerySingleAsync<WindowTotals>(
             new CommandDefinition(
                 totalsSql,
                 parameters,
                 cancellationToken: cancellationToken));
-        var topPosts = await db.QueryAsync<TopPostDto>(
+        var statusCounts = await db.QueryAsync<StatusCountRow>(
+            new CommandDefinition(
+                statusCountsSql,
+                cancellationToken: cancellationToken));
+        var topPostRows = await db.QueryAsync<TopPostDto>(
             new CommandDefinition(
                 topPostsSql,
                 parameters,
@@ -98,16 +103,28 @@ public sealed class AnalyticsRepository(IDbConnection db) : IAnalyticsRepository
                 parameters,
                 cancellationToken: cancellationToken));
 
+        var countsByStatus = statusCounts.ToDictionary(row => row.Status, row => row.Count);
+        int CountFor(string status) => countsByStatus.TryGetValue(status, out var count) ? count : 0;
+
+        var publishedPosts = CountFor("Published");
+        var draftPosts = CountFor("Draft");
+        var scheduledPosts = CountFor("Scheduled");
+        var archivedPosts = CountFor("Archived");
+
         return new AnalyticsSummaryDto(
             totals.TotalPageViews,
             totals.UniqueVisitors,
-            totals.TotalPosts,
-            totals.PublishedPosts,
-            totals.DraftPosts,
-            topPosts.AsList(),
-            dailyRows.Select(row => new DailyViewDto(
-                DateOnly.FromDateTime(row.Date),
-                row.ViewCount)).ToList());
+            publishedPosts + draftPosts + scheduledPosts + archivedPosts,
+            publishedPosts,
+            draftPosts,
+            scheduledPosts,
+            archivedPosts,
+            AnalyticsAggregation.RankTopPosts(topPostRows),
+            AnalyticsAggregation.BuildDailySeries(
+                window,
+                dailyRows.Select(row => new DailyViewDto(
+                    DateOnly.FromDateTime(row.Date),
+                    row.ViewCount))));
     }
 
     public async Task RecordPageViewAsync(
@@ -150,12 +167,9 @@ public sealed class AnalyticsRepository(IDbConnection db) : IAnalyticsRepository
         await db.ExecuteAsync(command);
     }
 
-    private sealed record AnalyticsTotals(
-        int TotalPageViews,
-        int UniqueVisitors,
-        int TotalPosts,
-        int PublishedPosts,
-        int DraftPosts);
+    private sealed record WindowTotals(int TotalPageViews, int UniqueVisitors);
+
+    private sealed record StatusCountRow(string Status, int Count);
 
     private sealed record DailyViewRow(DateTime Date, int ViewCount);
 }

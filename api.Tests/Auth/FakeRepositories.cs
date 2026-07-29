@@ -1,3 +1,4 @@
+using BlogSite.Api.Common;
 using BlogSite.Api.DTOs;
 using BlogSite.Api.Repositories;
 
@@ -279,8 +280,21 @@ internal sealed class FakeLayoutTemplateRepository : ILayoutTemplateRepository
 
 internal sealed class FakeAnalyticsRepository : IAnalyticsRepository
 {
-    public Task<AnalyticsSummaryDto> GetSummaryAsync(DateTime since, CancellationToken cancellationToken) =>
-        Task.FromResult(new AnalyticsSummaryDto(0, 0, 0, 0, 0, [], []));
+    /// <summary>Configurable result returned by <see cref="GetSummaryAsync"/>.</summary>
+    public AnalyticsSummaryDto Result { get; set; } = new(0, 0, 0, 0, 0, 0, 0, [], []);
+
+    /// <summary>
+    /// The <see cref="AnalyticsWindow"/> the controller most recently passed
+    /// in, so tests can assert on the validated window (day count, boundary)
+    /// without depending on repository/SQL internals.
+    /// </summary>
+    public AnalyticsWindow? CapturedWindow { get; private set; }
+
+    public Task<AnalyticsSummaryDto> GetSummaryAsync(AnalyticsWindow window, CancellationToken cancellationToken)
+    {
+        CapturedWindow = window;
+        return Task.FromResult(Result);
+    }
 
     public Task RecordPageViewAsync(
         int? postId,

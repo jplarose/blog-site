@@ -1,3 +1,4 @@
+using BlogSite.Api.Common;
 using BlogSite.Api.DTOs;
 using BlogSite.Api.Repositories;
 using Microsoft.AspNetCore.Authorization;
@@ -11,16 +12,26 @@ namespace BlogSite.Api.Controllers;
 public class AnalyticsController(IAnalyticsRepository analytics) : ControllerBase
 {
     /// <summary>Gets aggregate analytics for the requested number of days.</summary>
-    /// <param name="days">Number of days to include. Defaults to 30.</param>
+    /// <param name="days">
+    /// Number of days to include, 1-365 inclusive. Defaults to 30. The
+    /// window is anchored to "today" in UTC:
+    /// <c>Since = today_utc - (days - 1)</c>, so the daily-view series has
+    /// exactly <paramref name="days"/> entries.
+    /// </param>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet("summary")]
     [ProducesResponseType(typeof(AnalyticsSummaryDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<AnalyticsSummaryDto>> GetSummary(
         [FromQuery] int days = 30,
         CancellationToken cancellationToken = default)
     {
-        var since = DateTime.UtcNow.AddDays(-days);
-        return Ok(await analytics.GetSummaryAsync(since, cancellationToken));
+        if (!AnalyticsWindow.TryCreate(days, DateTime.UtcNow, out var window, out var errorMessage))
+        {
+            return BadRequest(errorMessage);
+        }
+
+        return Ok(await analytics.GetSummaryAsync(window!, cancellationToken));
     }
 
     /// <summary>Records a page view for analytics reporting.</summary>
