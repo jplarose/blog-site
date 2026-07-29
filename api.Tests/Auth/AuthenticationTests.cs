@@ -147,6 +147,22 @@ public class AuthenticationTests
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("not-a-jwt-at-all")]
+    [InlineData("also.not.valid.base64!!")]
+    [InlineData("")]
+    public async Task GarbageToken_Returns401(string garbage)
+    {
+        using var factory = new AuthTestWebApplicationFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", garbage);
+
+        var response = await client.PostAsync("/api/posts", Json.Empty());
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
     [Fact]
     public async Task ValidToken_ValidatorReportsRevoked_Returns401()
     {
