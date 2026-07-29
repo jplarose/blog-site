@@ -1,4 +1,4 @@
-import type { LayoutTemplate, PostTemplateContent, TemplateSummary } from "@/lib/template-schema";
+import type { CatalogTemplate, TemplateSummary } from "@/lib/catalog";
 
 export const API_BASE_URL = "";
 const SERVER_APP_BASE_URL =
@@ -13,7 +13,6 @@ export interface Post {
   title: string;
   slug: string;
   content: string;
-  templateContent?: PostTemplateContent;
   excerpt?: string;
   featuredImageUrl?: string;
   status: PostStatus;
@@ -22,6 +21,7 @@ export interface Post {
   categoryId?: number;
   categoryName?: string;
   templateId?: number;
+  templateKey?: string;
   templateName?: string;
   tags: string[];
   createdAt: string;
@@ -40,6 +40,7 @@ export interface PostSummary {
   categoryId?: number;
   categoryName?: string;
   templateId?: number;
+  templateKey?: string;
   templateName?: string;
   tags: string[];
   createdAt: string;
@@ -51,8 +52,6 @@ export interface Category {
   name: string;
   slug: string;
   description?: string;
-  defaultTemplateId?: number;
-  defaultTemplateName?: string;
   postCount: number;
   createdAt: string;
   updatedAt: string;
@@ -165,7 +164,7 @@ export const tagsApi = {
 // ---- Templates (read-only catalog; see issue #30) ----
 export const templatesApi = {
   list: () => apiFetch<TemplateSummary[]>("/api/layouttemplates"),
-  get: (id: number) => apiFetch<LayoutTemplate>(`/api/layouttemplates/${id}`),
+  get: (id: number) => apiFetch<CatalogTemplate>(`/api/layouttemplates/${id}`),
 };
 
 // ---- Analytics ----
