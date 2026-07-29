@@ -15,15 +15,28 @@ public class CategoriesController(
     CategoryService categoryService) : ControllerBase
 {
     /// <summary>Gets all categories and their post counts.</summary>
+    /// <remarks>
+    /// Identity-branched counts: an authenticated admin caller sees post
+    /// counts across all statuses; an anonymous caller's counts include
+    /// Published posts only, so public reads never reveal how many
+    /// unpublished posts exist.
+    /// </remarks>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet]
     [AllowAnonymous]
     [ProducesResponseType(typeof(IEnumerable<CategoryDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<CategoryDto>>> GetCategories(
         CancellationToken cancellationToken) =>
-        Ok(await categories.GetAllAsync(cancellationToken));
+        Ok(await categories.GetAllAsync(
+            publishedOnly: User.Identity?.IsAuthenticated != true,
+            cancellationToken));
 
     /// <summary>Gets a category by identifier.</summary>
+    /// <remarks>
+    /// Identity-branched counts: an authenticated admin caller sees the post
+    /// count across all statuses; an anonymous caller's count includes
+    /// Published posts only.
+    /// </remarks>
     /// <param name="id">Category identifier.</param>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet("{id:int}")]
@@ -34,7 +47,10 @@ public class CategoriesController(
         int id,
         CancellationToken cancellationToken)
     {
-        var category = await categories.GetByIdAsync(id, cancellationToken);
+        var category = await categories.GetByIdAsync(
+            id,
+            publishedOnly: User.Identity?.IsAuthenticated != true,
+            cancellationToken);
         return category is null ? NotFound() : Ok(category);
     }
 

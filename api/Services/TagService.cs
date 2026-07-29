@@ -77,7 +77,12 @@ public class TagService(ITagRepository tags)
         int id,
         CancellationToken cancellationToken)
     {
-        var existing = await tags.GetByIdAsync(id, cancellationToken);
+        // Admin-only path: count posts of every status so a tag attached
+        // to drafts/scheduled posts still refuses deletion.
+        var existing = await tags.GetByIdAsync(
+            id,
+            publishedOnly: false,
+            cancellationToken);
         if (existing is null)
         {
             return Result.Failure("tag.not_found", "Tag was not found.");

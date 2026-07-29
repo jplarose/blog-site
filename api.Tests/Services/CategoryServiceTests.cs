@@ -212,15 +212,21 @@ public class CategoryServiceTests
         public bool DeleteResult { get; init; }
         public bool NameExists { get; init; }
         public bool SlugExists { get; init; }
+        public bool? CapturedGetByIdPublishedOnly { get; private set; }
 
         public Task<IReadOnlyList<CategoryDto>> GetAllAsync(
+            bool publishedOnly,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public Task<CategoryDto?> GetByIdAsync(
             int id,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(GetByIdResult);
+            bool publishedOnly,
+            CancellationToken cancellationToken)
+        {
+            CapturedGetByIdPublishedOnly = publishedOnly;
+            return Task.FromResult(GetByIdResult);
+        }
 
         public Task<bool> NameExistsAsync(
             string name,

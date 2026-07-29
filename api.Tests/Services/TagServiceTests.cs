@@ -173,15 +173,21 @@ public class TagServiceTests
         public bool NameExists { get; init; }
         public bool SlugExists { get; init; }
         public TagDto? GetByIdResult { get; init; }
+        public bool? CapturedGetByIdPublishedOnly { get; private set; }
 
         public Task<IReadOnlyList<TagDto>> GetAllAsync(
+            bool publishedOnly,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public Task<TagDto?> GetByIdAsync(
             int id,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(GetByIdResult);
+            bool publishedOnly,
+            CancellationToken cancellationToken)
+        {
+            CapturedGetByIdPublishedOnly = publishedOnly;
+            return Task.FromResult(GetByIdResult);
+        }
 
         public Task<bool> NameExistsAsync(
             string name,

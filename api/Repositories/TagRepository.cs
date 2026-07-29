@@ -6,8 +6,26 @@ namespace BlogSite.Api.Repositories;
 
 public interface ITagRepository
 {
-    Task<IReadOnlyList<TagDto>> GetAllAsync(CancellationToken cancellationToken);
-    Task<TagDto?> GetByIdAsync(int id, CancellationToken cancellationToken);
+    /// <param name="publishedOnly">
+    /// When <c>true</c> (anonymous caller), <c>PostCount</c> counts only
+    /// Published posts so public reads never leak how many non-Published
+    /// posts use a tag. When <c>false</c> (admin), all attached posts
+    /// count — the referenced-delete protection relies on this.
+    /// </param>
+    Task<IReadOnlyList<TagDto>> GetAllAsync(
+        bool publishedOnly,
+        CancellationToken cancellationToken);
+
+    /// <param name="publishedOnly">
+    /// When <c>true</c> (anonymous caller), <c>PostCount</c> counts only
+    /// Published posts so public reads never leak how many non-Published
+    /// posts use a tag. When <c>false</c> (admin), all attached posts
+    /// count — the referenced-delete protection relies on this.
+    /// </param>
+    Task<TagDto?> GetByIdAsync(
+        int id,
+        bool publishedOnly,
+        CancellationToken cancellationToken);
     Task<bool> NameExistsAsync(
         string name,
         int? excludeId,
@@ -44,14 +62,18 @@ public sealed class TagRepository(IDbConnection db) : ITagRepository
             tag.id AS Id,
             tag.name AS Name,
             tag.slug AS Slug,
-            COUNT(post_tag.post_id)::int AS PostCount,
+            COUNT(post.id)::int AS PostCount,
             tag.created_at AS CreatedAt
         FROM tags AS tag
         LEFT JOIN post_tags AS post_tag
             ON post_tag.tag_id = tag.id
+        LEFT JOIN posts AS post
+            ON post.id = post_tag.post_id
+            AND (@PublishedOnly = FALSE OR post.status = 'Published')
         """;
 
     public async Task<IReadOnlyList<TagDto>> GetAllAsync(
+        bool publishedOnly,
         CancellationToken cancellationToken)
     {
         var command = new CommandDefinition(
@@ -60,6 +82,7 @@ public sealed class TagRepository(IDbConnection db) : ITagRepository
             GROUP BY tag.id
             ORDER BY tag.name;
             """,
+            new { PublishedOnly = publishedOnly },
             cancellationToken: cancellationToken);
 
         var tags = await db.QueryAsync<TagDto>(command);
@@ -68,6 +91,7 @@ public sealed class TagRepository(IDbConnection db) : ITagRepository
 
     public async Task<TagDto?> GetByIdAsync(
         int id,
+        bool publishedOnly,
         CancellationToken cancellationToken)
     {
         var command = new CommandDefinition(
@@ -76,7 +100,7 @@ public sealed class TagRepository(IDbConnection db) : ITagRepository
             WHERE tag.id = @Id
             GROUP BY tag.id;
             """,
-            new { Id = id },
+            new { Id = id, PublishedOnly = publishedOnly },
             cancellationToken: cancellationToken);
 
         return await db.QuerySingleOrDefaultAsync<TagDto>(command);
@@ -149,7 +173,7 @@ public sealed class TagRepository(IDbConnection db) : ITagRepository
             cancellationToken: cancellationToken);
 
         var id = await db.QuerySingleAsync<int>(command);
-        return (await GetByIdAsync(id, cancellationToken))!;
+        return (await GetByIdAsync(id, publishedOnly: false, cancellationToken))!;
     }
 
     public async Task<TagDto?> UpdateAsync(
@@ -172,7 +196,7 @@ public sealed class TagRepository(IDbConnection db) : ITagRepository
             cancellationToken: cancellationToken);
 
         var updated = await db.ExecuteAsync(command);
-        return updated == 0 ? null : await GetByIdAsync(id, cancellationToken);
+        return updated == 0 ? null : await GetByIdAsync(id, publishedOnly: false, cancellationToken);
     }
 
     public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken)

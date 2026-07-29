@@ -89,7 +89,12 @@ public class CategoryService(ICategoryRepository categories)
         int id,
         CancellationToken cancellationToken)
     {
-        var existing = await categories.GetByIdAsync(id, cancellationToken);
+        // Admin-only path: count posts of every status so a category
+        // referenced by drafts/scheduled posts still refuses deletion.
+        var existing = await categories.GetByIdAsync(
+            id,
+            publishedOnly: false,
+            cancellationToken);
         if (existing is null)
         {
             return Result.Failure("category.not_found", "Category was not found.");

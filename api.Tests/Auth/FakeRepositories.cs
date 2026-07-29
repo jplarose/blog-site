@@ -146,11 +146,32 @@ internal sealed class FakeCategoryRepository : ICategoryRepository
     /// <summary>Configurable result returned by <see cref="DeleteAsync"/>.</summary>
     public bool DeleteResult { get; set; }
 
-    public Task<IReadOnlyList<CategoryDto>> GetAllAsync(CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyList<CategoryDto>>([]);
+    /// <summary>
+    /// The <c>publishedOnly</c> value the controller most recently passed to
+    /// <see cref="GetAllAsync"/>, so tests can assert the identity branch
+    /// (anonymous => Published-only counts) without SQL.
+    /// </summary>
+    public bool? CapturedGetAllPublishedOnly { get; private set; }
 
-    public Task<CategoryDto?> GetByIdAsync(int id, CancellationToken cancellationToken) =>
-        Task.FromResult(GetByIdResult);
+    /// <summary>See <see cref="CapturedGetAllPublishedOnly"/>.</summary>
+    public bool? CapturedGetByIdPublishedOnly { get; private set; }
+
+    public Task<IReadOnlyList<CategoryDto>> GetAllAsync(
+        bool publishedOnly,
+        CancellationToken cancellationToken)
+    {
+        CapturedGetAllPublishedOnly = publishedOnly;
+        return Task.FromResult<IReadOnlyList<CategoryDto>>([]);
+    }
+
+    public Task<CategoryDto?> GetByIdAsync(
+        int id,
+        bool publishedOnly,
+        CancellationToken cancellationToken)
+    {
+        CapturedGetByIdPublishedOnly = publishedOnly;
+        return Task.FromResult(GetByIdResult);
+    }
 
     public Task<bool> NameExistsAsync(
         string name,
@@ -207,11 +228,32 @@ internal sealed class FakeTagRepository : ITagRepository
     /// </summary>
     public IReadOnlyList<int> ExistingIds { get; set; } = [];
 
-    public Task<IReadOnlyList<TagDto>> GetAllAsync(CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyList<TagDto>>([]);
+    /// <summary>
+    /// The <c>publishedOnly</c> value the controller most recently passed to
+    /// <see cref="GetAllAsync"/>, so tests can assert the identity branch
+    /// (anonymous => Published-only counts) without SQL.
+    /// </summary>
+    public bool? CapturedGetAllPublishedOnly { get; private set; }
 
-    public Task<TagDto?> GetByIdAsync(int id, CancellationToken cancellationToken) =>
-        Task.FromResult(GetByIdResult);
+    /// <summary>See <see cref="CapturedGetAllPublishedOnly"/>.</summary>
+    public bool? CapturedGetByIdPublishedOnly { get; private set; }
+
+    public Task<IReadOnlyList<TagDto>> GetAllAsync(
+        bool publishedOnly,
+        CancellationToken cancellationToken)
+    {
+        CapturedGetAllPublishedOnly = publishedOnly;
+        return Task.FromResult<IReadOnlyList<TagDto>>([]);
+    }
+
+    public Task<TagDto?> GetByIdAsync(
+        int id,
+        bool publishedOnly,
+        CancellationToken cancellationToken)
+    {
+        CapturedGetByIdPublishedOnly = publishedOnly;
+        return Task.FromResult(GetByIdResult);
+    }
 
     public Task<bool> NameExistsAsync(
         string name,

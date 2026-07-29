@@ -6,8 +6,26 @@ namespace BlogSite.Api.Repositories;
 
 public interface ICategoryRepository
 {
-    Task<IReadOnlyList<CategoryDto>> GetAllAsync(CancellationToken cancellationToken);
-    Task<CategoryDto?> GetByIdAsync(int id, CancellationToken cancellationToken);
+    /// <param name="publishedOnly">
+    /// When <c>true</c> (anonymous caller), <c>PostCount</c> counts only
+    /// Published posts so public reads never leak how many non-Published
+    /// posts reference a category. When <c>false</c> (admin), all posts
+    /// count — the referenced-delete protection relies on this.
+    /// </param>
+    Task<IReadOnlyList<CategoryDto>> GetAllAsync(
+        bool publishedOnly,
+        CancellationToken cancellationToken);
+
+    /// <param name="publishedOnly">
+    /// When <c>true</c> (anonymous caller), <c>PostCount</c> counts only
+    /// Published posts so public reads never leak how many non-Published
+    /// posts reference a category. When <c>false</c> (admin), all posts
+    /// count — the referenced-delete protection relies on this.
+    /// </param>
+    Task<CategoryDto?> GetByIdAsync(
+        int id,
+        bool publishedOnly,
+        CancellationToken cancellationToken);
     Task<bool> NameExistsAsync(
         string name,
         int? excludeId,
@@ -44,9 +62,11 @@ public sealed class CategoryRepository(IDbConnection db) : ICategoryRepository
         FROM categories AS c
         LEFT JOIN posts AS post
             ON post.category_id = c.id
+            AND (@PublishedOnly = FALSE OR post.status = 'Published')
         """;
 
     public async Task<IReadOnlyList<CategoryDto>> GetAllAsync(
+        bool publishedOnly,
         CancellationToken cancellationToken)
     {
         var command = new CommandDefinition(
@@ -55,6 +75,7 @@ public sealed class CategoryRepository(IDbConnection db) : ICategoryRepository
             GROUP BY c.id
             ORDER BY c.name;
             """,
+            new { PublishedOnly = publishedOnly },
             cancellationToken: cancellationToken);
 
         var categories = await db.QueryAsync<CategoryDto>(command);
@@ -63,6 +84,7 @@ public sealed class CategoryRepository(IDbConnection db) : ICategoryRepository
 
     public async Task<CategoryDto?> GetByIdAsync(
         int id,
+        bool publishedOnly,
         CancellationToken cancellationToken)
     {
         var command = new CommandDefinition(
@@ -71,7 +93,7 @@ public sealed class CategoryRepository(IDbConnection db) : ICategoryRepository
             WHERE c.id = @Id
             GROUP BY c.id;
             """,
-            new { Id = id },
+            new { Id = id, PublishedOnly = publishedOnly },
             cancellationToken: cancellationToken);
 
         return await db.QuerySingleOrDefaultAsync<CategoryDto>(command);
@@ -152,7 +174,7 @@ public sealed class CategoryRepository(IDbConnection db) : ICategoryRepository
             cancellationToken: cancellationToken);
 
         var id = await db.QuerySingleAsync<int>(command);
-        return (await GetByIdAsync(id, cancellationToken))!;
+        return (await GetByIdAsync(id, publishedOnly: false, cancellationToken))!;
     }
 
     public async Task<CategoryDto?> UpdateAsync(
@@ -184,7 +206,7 @@ public sealed class CategoryRepository(IDbConnection db) : ICategoryRepository
             cancellationToken: cancellationToken);
 
         var updated = await db.ExecuteAsync(command);
-        return updated == 0 ? null : await GetByIdAsync(id, cancellationToken);
+        return updated == 0 ? null : await GetByIdAsync(id, publishedOnly: false, cancellationToken);
     }
 
     public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken)

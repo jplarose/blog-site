@@ -645,10 +645,14 @@ public class PostServiceTests
         public IReadOnlyList<int> ExistingIds { get; init; } = [];
 
         public Task<IReadOnlyList<TagDto>> GetAllAsync(
+            bool publishedOnly,
             CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public Task<TagDto?> GetByIdAsync(int id, CancellationToken cancellationToken) =>
+        public Task<TagDto?> GetByIdAsync(
+            int id,
+            bool publishedOnly,
+            CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
         public Task<bool> NameExistsAsync(

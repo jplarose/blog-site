@@ -15,15 +15,28 @@ public class TagsController(
     TagService tagService) : ControllerBase
 {
     /// <summary>Gets all tags and their post counts.</summary>
+    /// <remarks>
+    /// Identity-branched counts: an authenticated admin caller sees post
+    /// counts across all statuses; an anonymous caller's counts include
+    /// Published posts only, so public reads never reveal how many
+    /// unpublished posts exist.
+    /// </remarks>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet]
     [AllowAnonymous]
     [ProducesResponseType(typeof(IEnumerable<TagDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<TagDto>>> GetTags(
         CancellationToken cancellationToken) =>
-        Ok(await tags.GetAllAsync(cancellationToken));
+        Ok(await tags.GetAllAsync(
+            publishedOnly: User.Identity?.IsAuthenticated != true,
+            cancellationToken));
 
     /// <summary>Gets a tag by identifier.</summary>
+    /// <remarks>
+    /// Identity-branched counts: an authenticated admin caller sees the post
+    /// count across all statuses; an anonymous caller's count includes
+    /// Published posts only.
+    /// </remarks>
     /// <param name="id">Tag identifier.</param>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet("{id:int}")]
@@ -34,7 +47,10 @@ public class TagsController(
         int id,
         CancellationToken cancellationToken)
     {
-        var tag = await tags.GetByIdAsync(id, cancellationToken);
+        var tag = await tags.GetByIdAsync(
+            id,
+            publishedOnly: User.Identity?.IsAuthenticated != true,
+            cancellationToken);
         return tag is null ? NotFound() : Ok(tag);
     }
 
