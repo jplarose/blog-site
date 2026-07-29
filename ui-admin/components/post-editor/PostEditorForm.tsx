@@ -165,7 +165,10 @@ export default function PostEditorForm({
 
     const payload = {
       title: title.trim(),
-      slug: slugify(title),
+      // A published post's slug is its public permalink — preserve it on
+      // edit (even if the title changes) and only derive it from the title
+      // for brand-new posts.
+      slug: mode === "edit" && initialPost?.slug ? initialPost.slug : slugify(title),
       // The wire contract for `content` is sanitized rich HTML (the API
       // sanitizes HTML, the public site renders HTML). `content` state is
       // already HTML after any edit; this also normalizes untouched legacy

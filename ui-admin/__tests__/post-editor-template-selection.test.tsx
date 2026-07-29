@@ -140,4 +140,74 @@ describe("PostEditorForm template selection and submit payload", () => {
       expect.objectContaining({ templateId: 1, tagIds: [11] }),
     );
   });
+
+  it("derives the slug from the title for a new post", async () => {
+    vi.mocked(postsApi.create).mockResolvedValue({
+      id: 42,
+      title: "My New Post!",
+      slug: "my-new-post",
+      content: "",
+      status: "Draft",
+      tags: [],
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+
+    render(<PostEditorForm mode="create" />);
+
+    await screen.findByText("Article");
+    fireEvent.click(screen.getByLabelText("Article"));
+    fireEvent.change(screen.getByPlaceholderText("Post title…"), {
+      target: { value: "My New Post!" },
+    });
+    fireEvent.click(screen.getByText("Save Draft"));
+
+    await screen.findByText("Save Draft");
+    expect(postsApi.create).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: "my-new-post" }),
+    );
+  });
+
+  it("preserves the existing slug when editing, even after a title change", async () => {
+    vi.mocked(postsApi.update).mockResolvedValue({
+      id: 7,
+      title: "Renamed Title",
+      slug: "existing",
+      content: "",
+      status: "Published",
+      tags: [],
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    });
+
+    render(
+      <PostEditorForm
+        mode="edit"
+        postId={7}
+        initialPost={{
+          id: 7,
+          title: "Existing",
+          slug: "existing",
+          content: "",
+          status: "Published",
+          templateId: 1,
+          tags: [],
+          createdAt: "2026-01-01T00:00:00Z",
+          updatedAt: "2026-01-01T00:00:00Z",
+        }}
+      />,
+    );
+
+    await screen.findByText("Article");
+    fireEvent.change(screen.getByPlaceholderText("Post title…"), {
+      target: { value: "Renamed Title" },
+    });
+    fireEvent.click(screen.getByText("Update Draft"));
+
+    await screen.findByText("Update Draft");
+    expect(postsApi.update).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ slug: "existing", title: "Renamed Title" }),
+    );
+  });
 });

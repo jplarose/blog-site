@@ -111,6 +111,7 @@ public class PostsController(PostService postService) : ControllerBase
     [HttpPost]
     [ProducesResponseType(typeof(PostDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<PostDto>> CreatePost(
         [FromBody] CreatePostRequest request,
         CancellationToken cancellationToken)
@@ -132,6 +133,7 @@ public class PostsController(PostService postService) : ControllerBase
     [ProducesResponseType(typeof(PostDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<PostDto>> UpdatePost(
         int id,
         [FromBody] UpdatePostRequest request,
@@ -233,6 +235,9 @@ public class PostsController(PostService postService) : ControllerBase
         {
             "post.not_found" => NotFound(result.Error.Message),
             "post.invalid_status" => BadRequest(result.Error.Message),
+            "post.slug_required" => BadRequest(result.Error.Message),
+            "post.slug_invalid" => BadRequest(result.Error.Message),
+            "post.duplicate_slug" => Conflict(result.Error.Message),
             "post.template_invalid" => BadRequest(result.Error.Message),
             "post.tag_invalid" => BadRequest(result.Error.Message),
             "post.invalid_schedule" => BadRequest(result.Error.Message),

@@ -26,6 +26,120 @@ public class PostServiceTests
         Assert.Null(repository.CreatedPost);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task CreateAsync_MissingSlug_ReturnsSlugRequiredFailureWithoutWriting(string slug)
+    {
+        var repository = new FakePostRepository();
+        var service = new PostService(
+            repository,
+            new FakeLayoutTemplateRepository(),
+            new FakeTagRepository(),
+            new PostHtmlSanitizer());
+
+        var result = await service.CreateAsync(
+            CreateRequest(slug: slug),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("post.slug_required", result.Error?.Code);
+        Assert.Null(repository.CreatedPost);
+    }
+
+    [Theory]
+    [InlineData("Not A Slug")]
+    [InlineData("UPPER-case")]
+    [InlineData("trailing-")]
+    [InlineData("double--hyphen")]
+    [InlineData("slash/slug")]
+    public async Task CreateAsync_InvalidSlug_ReturnsSlugValidationFailureWithoutWriting(string slug)
+    {
+        var repository = new FakePostRepository();
+        var service = new PostService(
+            repository,
+            new FakeLayoutTemplateRepository(),
+            new FakeTagRepository(),
+            new PostHtmlSanitizer());
+
+        var result = await service.CreateAsync(
+            CreateRequest(slug: slug),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("post.slug_invalid", result.Error?.Code);
+        Assert.Null(repository.CreatedPost);
+    }
+
+    [Fact]
+    public async Task CreateAsync_DuplicateSlugUniqueViolation_ReturnsDuplicateSlugFailure()
+    {
+        var repository = new FakePostRepository
+        {
+            CreateException = UniqueViolation()
+        };
+        var service = new PostService(
+            repository,
+            new FakeLayoutTemplateRepository(),
+            new FakeTagRepository(),
+            new PostHtmlSanitizer());
+
+        var result = await service.CreateAsync(
+            CreateRequest(),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("post.duplicate_slug", result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_InvalidSlug_ReturnsSlugValidationFailure()
+    {
+        var repository = new FakePostRepository();
+        var service = new PostService(
+            repository,
+            new FakeLayoutTemplateRepository(),
+            new FakeTagRepository(),
+            new PostHtmlSanitizer());
+
+        var result = await service.UpdateAsync(
+            1,
+            UpdateRequest(slug: "Not A Slug"),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("post.slug_invalid", result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_DuplicateSlugUniqueViolation_ReturnsDuplicateSlugFailure()
+    {
+        var repository = new FakePostRepository
+        {
+            UpdateException = UniqueViolation()
+        };
+        var service = new PostService(
+            repository,
+            new FakeLayoutTemplateRepository(),
+            new FakeTagRepository(),
+            new PostHtmlSanitizer());
+
+        var result = await service.UpdateAsync(
+            1,
+            UpdateRequest(),
+            CancellationToken.None);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("post.duplicate_slug", result.Error?.Code);
+    }
+
+    private static Npgsql.PostgresException UniqueViolation() =>
+        new(
+            "duplicate key value violates unique constraint \"uix_posts_slug\"",
+            "ERROR",
+            "ERROR",
+            "23505");
+
     [Fact]
     public async Task CreateAsync_MissingTemplateId_ReturnsTemplateValidationFailure()
     {
@@ -459,10 +573,11 @@ public class PostServiceTests
     private static CreatePostRequest CreateRequest(
         string status = "Draft",
         int? templateId = 1,
-        IReadOnlyList<int>? tagIds = null) =>
+        IReadOnlyList<int>? tagIds = null,
+        string slug = "title") =>
         new(
             "Title",
-            "title",
+            slug,
             "Content",
             null,
             null,
@@ -474,10 +589,11 @@ public class PostServiceTests
 
     private static UpdatePostRequest UpdateRequest(
         int? templateId = 1,
-        IReadOnlyList<int>? tagIds = null) =>
+        IReadOnlyList<int>? tagIds = null,
+        string slug = "title") =>
         new(
             "Title",
-            "title",
+            slug,
             "Content",
             null,
             null,
@@ -574,6 +690,8 @@ public class PostServiceTests
     {
         public PostWrite? CreatedPost { get; private set; }
         public PostDto CreateResult { get; init; } = PostDto();
+        public Exception? CreateException { get; init; }
+        public Exception? UpdateException { get; init; }
         public PostDto? UpdateResult { get; init; }
         public PostDto? PublishResult { get; init; }
         public PostDto? ScheduleResult { get; init; }
@@ -617,6 +735,11 @@ public class PostServiceTests
             PostWrite post,
             CancellationToken cancellationToken)
         {
+            if (CreateException is not null)
+            {
+                throw CreateException;
+            }
+
             CreatedPost = post;
             return Task.FromResult(CreateResult);
         }
@@ -625,7 +748,9 @@ public class PostServiceTests
             int id,
             PostWrite post,
             CancellationToken cancellationToken) =>
-            Task.FromResult(UpdateResult);
+            UpdateException is not null
+                ? throw UpdateException
+                : Task.FromResult(UpdateResult);
 
         public Task<bool> DeleteAsync(
             int id,

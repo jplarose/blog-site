@@ -3,6 +3,8 @@ using BlogSite.Api.DTOs;
 using BlogSite.Api.Domain;
 using BlogSite.Api.Repositories;
 using BlogSite.Api.Results;
+using BlogSite.Api.Validation;
+using Npgsql;
 
 namespace BlogSite.Api.Services;
 
@@ -12,6 +14,8 @@ public class PostService(
     ITagRepository tags,
     IPostHtmlSanitizer sanitizer)
 {
+    private const string UniqueViolationSqlState = "23505";
+
     /// <summary>
     /// Gets a filtered, paginated list of posts. When
     /// <paramref name="includeUnpublished"/> is <c>false</c> (anonymous
@@ -64,6 +68,12 @@ public class PostService(
                 "Invalid status value.");
         }
 
+        var slugValidation = ValidateSlug(request.Slug);
+        if (slugValidation is not null)
+        {
+            return slugValidation;
+        }
+
         var templateValidation = await ValidateTemplateAsync(
             request.TemplateId,
             cancellationToken);
@@ -78,11 +88,20 @@ public class PostService(
             return tagValidation;
         }
 
-        var post = await posts.CreateAsync(
-            ToPostWrite(request, status),
-            cancellationToken);
+        try
+        {
+            var post = await posts.CreateAsync(
+                ToPostWrite(request, status),
+                cancellationToken);
 
-        return Result<PostDto>.Success(post);
+            return Result<PostDto>.Success(post);
+        }
+        catch (PostgresException ex) when (ex.SqlState == UniqueViolationSqlState)
+        {
+            // The DB's unique index on posts.slug is the source of truth —
+            // map the violation instead of surfacing a raw 500.
+            return DuplicateSlugFailure();
+        }
     }
 
     public async Task<Result<PostDto>> UpdateAsync(
@@ -97,6 +116,12 @@ public class PostService(
                 "Invalid status value.");
         }
 
+        var slugValidation = ValidateSlug(request.Slug);
+        if (slugValidation is not null)
+        {
+            return slugValidation;
+        }
+
         var templateValidation = await ValidateTemplateAsync(
             request.TemplateId,
             cancellationToken);
@@ -111,10 +136,18 @@ public class PostService(
             return tagValidation;
         }
 
-        var post = await posts.UpdateAsync(
-            id,
-            ToPostWrite(request, status),
-            cancellationToken);
+        PostDto? post;
+        try
+        {
+            post = await posts.UpdateAsync(
+                id,
+                ToPostWrite(request, status),
+                cancellationToken);
+        }
+        catch (PostgresException ex) when (ex.SqlState == UniqueViolationSqlState)
+        {
+            return DuplicateSlugFailure();
+        }
 
         return post is null
             ? Result<PostDto>.Failure("post.not_found", "Post was not found.")
@@ -229,6 +262,34 @@ public class PostService(
 
         return null;
     }
+
+    /// <summary>
+    /// Validates the post slug the same way taxonomy slugs are validated:
+    /// required and URL-safe (lowercase letters, digits, single hyphens).
+    /// </summary>
+    private static Result<PostDto>? ValidateSlug(string? slug)
+    {
+        if (string.IsNullOrWhiteSpace(slug))
+        {
+            return Result<PostDto>.Failure(
+                "post.slug_required",
+                "Post slug is required.");
+        }
+
+        if (!SlugValidator.IsUrlSafe(slug.Trim()))
+        {
+            return Result<PostDto>.Failure(
+                "post.slug_invalid",
+                "Post slug must contain only lowercase letters, digits, and hyphens.");
+        }
+
+        return null;
+    }
+
+    private static Result<PostDto> DuplicateSlugFailure() =>
+        Result<PostDto>.Failure(
+            "post.duplicate_slug",
+            "A post with this slug already exists.");
 
     private async Task<Result<PostDto>?> ValidateTemplateAsync(
         int? templateId,
