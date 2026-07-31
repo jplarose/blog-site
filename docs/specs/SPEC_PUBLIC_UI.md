@@ -1,34 +1,19 @@
-# Spec: Public Client UI — Blog Template System
+# Spec: Public Client UI — Fixed Template Catalog
 
 ## Target Technology
 - Next.js (App Router) + TypeScript
 - HeroUI component library for UI primitives where appropriate
-- Tailwind CSS + `@tailwindcss/typography` (`prose` classes) for rendered post content
+- Tailwind CSS
 - Server Components by default — public pages ship zero unnecessary client JavaScript
-- Static Site Generation (SSG) via `generateStaticParams` for all published posts
-- `@tiptap/html` for server-side rich text rendering (no client-side Tiptap bundle)
-- `isomorphic-dompurify` for sanitizing all rendered HTML before output
+- Static Site Generation (SSG) via `generateStaticParams` for published posts, with ISR revalidation
 
 ## Confidence Notes for Agent
 - All components in this spec are Server Components unless explicitly marked `'use client'`
 - `generateStaticParams` runs at build time and produces static HTML for every published post
-- Revalidation strategy is ISR (Incremental Static Regeneration) — use `revalidate` export or `next: { revalidate }` in fetch calls so that newly published posts appear without a full rebuild
-- The public post page never reads `templates` table directly — it always renders from `posts.template_snapshot`
-
-## Required Packages (if not already present)
-
-```bash
-npm install @tailwindcss/typography
-npm install @tiptap/html @tiptap/starter-kit @tiptap/extension-image @tiptap/extension-link
-npm install isomorphic-dompurify
-npm install @types/dompurify --save-dev
-```
-
-Add to `tailwind.config.ts`:
-
-```typescript
-plugins: [require('@tailwindcss/typography')],
-```
+- Revalidation strategy is ISR — use `revalidate` export or `next: { revalidate }` in fetch calls so newly published posts appear without a full rebuild
+- The public post page renders by fetching the post's **currently selected** catalog template (via `templateId`/`templateKey`) and its **current** `content` — there is no publish-time template snapshot to read; the fixed catalog never changes underneath a published post
+- Exact response shapes and the public-facing endpoint contracts are tracked in GitHub issues **#39–#41** and are not fully fixed yet. Where this spec would need to invent a contract those issues haven't settled, it stays high-level and defers to the issue rather than prescribing one
+- The renderer described below already exists in `ui-site/lib/api.ts` (`renderTemplate`) — this spec documents its contract rather than introducing a new one
 
 ---
 
@@ -42,78 +27,59 @@ app/
       [slug]/
         page.tsx               — individual post page
 
-components/
-  post-renderer/
-    PostRenderer.tsx           — top-level renderer: iterates blocks
-    blocks/
-      HeroBlockRenderer.tsx
-      TextBodyRenderer.tsx
-      ImageGridRenderer.tsx
-      VideoEmbedRenderer.tsx
-      TwoColumnRenderer.tsx
-      CalloutRenderer.tsx
-    fields/
-      RichTextFieldRenderer.tsx
-      ImageFieldRenderer.tsx
-      VideoUrlFieldRenderer.tsx
-
 lib/
-  tiptap-renderer.ts           — server-side generateHTML (no React dependency)
-  types.ts                     — shared types (same file as admin; import from there)
-  api.ts                       — same api client; public endpoints use no auth header
+  api.ts                        — API client; renderTemplate placeholder-substitution renderer
+  types.ts                      — shared types
 ```
+
+There is no `components/post-renderer/` block-renderer tree, no per-block-type renderer components, and no field-type renderer components — those belonged to the retired block/field template system. Rendering a post is placeholder substitution into one HTML/CSS template, not iterating a block list.
 
 ---
 
 ## Data Fetching
 
-### Public API Calls
-
-Public pages call the .NET backend. These calls go to the **public** endpoints that require no admin auth and filter `WHERE published = true` server-side.
+Public pages call the .NET backend's public endpoints, which require no admin auth and filter to `Published` posts only.
 
 ```typescript
-// lib/api.ts additions (public-facing, no auth header)
+// lib/types.ts
 
-posts: {
-  // ...existing admin methods...
-  getBySlug: (slug: string) =>
-    apiFetch<PublicPost>(`/api/posts/by-slug/${slug}`),
-  listPublished: (categorySlug?: string) => {
-    const qs = categorySlug ? `?categorySlug=${categorySlug}` : '';
-    return apiFetch<PublicPostSummary[]>(`/api/posts?published=true${qs}`);
-  },
-},
-```
-
-Define public-facing types that exclude internal fields:
-
-```typescript
-// lib/types.ts additions
-
-// What the public post endpoint returns
-// template_snapshot is renamed to templateDefinition for clarity in the client
 export interface PublicPost {
-  id: string;
+  id: number;
   title: string;
   slug: string;
-  content: Record<string, string>;
-  templateDefinition: TemplateDefinition;  // deserialized from template_snapshot
-  categorySlug: string;
-  categoryName: string;
+  content: string;           // sanitized rich HTML, already safe to inject
+  excerpt?: string;
+  featuredImageUrl?: string;
   publishedAt: string;
+  categoryName?: string;
+  tags: string[];
+  templateId?: number;
 }
 
-export interface PublicPostSummary {
-  id: string;
-  title: string;
-  slug: string;
-  publishedAt: string;
-  categoryName: string;
-  categorySlug: string;
-  // Excerpt: the backend should extract the first text field value, truncated to 200 chars
-  excerpt?: string;
+export interface LayoutTemplate {
+  id: number;
+  templateKey: string;
+  name: string;
+  htmlStructure: string;
+  cssStyles: string;
 }
 ```
+
+```typescript
+// lib/api.ts (public-facing calls, no auth header)
+
+export const templatesApi = {
+  get: (id: number) => apiFetch<LayoutTemplate>(`/api/layouttemplates/${id}`),
+};
+
+export const postsApi = {
+  getBySlug: (slug: string) => apiFetch<Post>(`/api/posts/slug/${slug}`),
+  listPublished: (categorySlug?: string) =>
+    apiFetch<PublicPost[]>(`/api/posts?status=Published${categorySlug ? `&categorySlug=${categorySlug}` : ''}`),
+};
+```
+
+Final query params, pagination, and category-filter shape: issue #39.
 
 ---
 
@@ -122,7 +88,7 @@ export interface PublicPostSummary {
 ```tsx
 // app/(public)/posts/page.tsx
 
-import { api } from '@/lib/api';
+import { postsApi } from '@/lib/api';
 import Link from 'next/link';
 import { Card, CardBody } from '@heroui/react';
 
@@ -130,7 +96,7 @@ import { Card, CardBody } from '@heroui/react';
 export const revalidate = 60;
 
 export default async function PostsPage() {
-  const posts = await api.posts.listPublished();
+  const posts = await postsApi.listPublished();
 
   return (
     <main className="max-w-3xl mx-auto px-4 py-12">
@@ -162,31 +128,28 @@ export default async function PostsPage() {
 
 ## Individual Post Page
 
-This is the most important public page. It uses `generateStaticParams` to pre-render all published posts at build time, and renders exclusively from `template_snapshot` (exposed as `templateDefinition` on the API response).
+The most important public page. It uses `generateStaticParams` to pre-render all published posts at build time, fetches the post's currently-selected catalog template, and renders by placeholder substitution.
 
 ```tsx
 // app/(public)/posts/[slug]/page.tsx
 
 import { notFound } from 'next/navigation';
-import { api } from '@/lib/api';
-import { PostRenderer } from '@/components/post-renderer/PostRenderer';
+import { postsApi, templatesApi } from '@/lib/api';
+import { renderTemplate } from '@/lib/api';
 import type { Metadata } from 'next';
 
-// ISR: revalidate allows newly published posts to appear without full rebuild
 export const revalidate = 60;
 
-// Called at build time: generates a static page for every published post
 export async function generateStaticParams() {
-  const posts = await api.posts.listPublished();
+  const posts = await postsApi.listPublished();
   return posts.map(p => ({ slug: p.slug }));
 }
 
-// Called at build time per slug, and at runtime on cache miss
 export async function generateMetadata(
   { params }: { params: { slug: string } }
 ): Promise<Metadata> {
   try {
-    const post = await api.posts.getBySlug(params.slug);
+    const post = await postsApi.getBySlug(params.slug);
     return {
       title: post.title,
       openGraph: { title: post.title, publishedTime: post.publishedAt },
@@ -199,27 +162,24 @@ export async function generateMetadata(
 export default async function PostPage({ params }: { params: { slug: string } }) {
   let post;
   try {
-    post = await api.posts.getBySlug(params.slug);
+    post = await postsApi.getBySlug(params.slug);
   } catch {
     notFound();
   }
 
-  return (
-    <main className="max-w-3xl mx-auto px-4 py-12">
-      <header className="mb-10">
-        <p className="text-sm text-default-400 uppercase tracking-wide mb-2">
-          {post.categoryName} · {new Date(post.publishedAt).toLocaleDateString()}
-        </p>
-        <h1 className="text-4xl font-bold">{post.title}</h1>
-      </header>
+  const template = post.templateId ? await templatesApi.get(post.templateId) : null;
+  if (!template) notFound();
 
-      {/*
-        PostRenderer receives:
-        - template: the snapshotted definition (NOT the live template)
-        - content: the field value map
-        This is the only place in the public UI that renders post content.
-      */}
-      <PostRenderer template={post.templateDefinition} content={post.content} />
+  // renderTemplate substitutes {{title}}, {{content}}, {{excerpt}}, {{featuredImage}},
+  // {{publishedAt}}, {{category}}, {{tags}} into template.htmlStructure, honoring the
+  // {{#featuredImage}}...{{/featuredImage}} conditional section. content is already
+  // sanitized server-side by the API — it is injected verbatim, not re-escaped.
+  const html = renderTemplate(template.htmlStructure, post, post.publishedAt);
+
+  return (
+    <main>
+      <style dangerouslySetInnerHTML={{ __html: template.cssStyles }} />
+      <div dangerouslySetInnerHTML={{ __html: html }} />
     </main>
   );
 }
@@ -227,401 +187,46 @@ export default async function PostPage({ params }: { params: { slug: string } })
 
 ---
 
-## PostRenderer
+## Placeholder-Substitution Renderer
 
-The renderer is a pure Server Component. It receives the template definition and content map, sorts blocks by `order`, and delegates each block to a typed sub-renderer. No client JavaScript is needed for rendering.
+The renderer is pure string substitution against the selected catalog template's `htmlStructure` — there is no block tree to walk, no field-type dispatch, and no client JavaScript involved. It already exists in `ui-site/lib/api.ts` (`renderTemplate`); this section documents its contract.
 
-```tsx
-// components/post-renderer/PostRenderer.tsx
+```typescript
+// lib/api.ts (excerpt)
 
-import { TemplateDefinition } from '@/lib/types';
-import { HeroBlockRenderer } from './blocks/HeroBlockRenderer';
-import { TextBodyRenderer } from './blocks/TextBodyRenderer';
-import { ImageGridRenderer } from './blocks/ImageGridRenderer';
-import { VideoEmbedRenderer } from './blocks/VideoEmbedRenderer';
-import { TwoColumnRenderer } from './blocks/TwoColumnRenderer';
-import { CalloutRenderer } from './blocks/CalloutRenderer';
-import type { TemplateBlock } from '@/lib/types';
-
-interface Props {
-  template: TemplateDefinition;
-  content: Record<string, string>;
-}
-
-export function PostRenderer({ template, content }: Props) {
-  const sortedBlocks = [...template.blocks].sort((a, b) => a.order - b.order);
-
-  return (
-    <article className="space-y-8">
-      {sortedBlocks.map(block => (
-        <BlockRouter key={block.id} block={block} content={content} />
-      ))}
-    </article>
-  );
-}
-
-function BlockRouter({ block, content }: { block: TemplateBlock; content: Record<string, string> }) {
-  // Extract this block's field values from the content map
-  // Fields not present in content default to empty string — never crash on missing values
-  const fieldValues = Object.fromEntries(
-    block.fields.map(f => [f.id, content[f.id] ?? ''])
-  );
-
-  const props = { block, fieldValues };
-
-  switch (block.type) {
-    case 'hero':         return <HeroBlockRenderer {...props} />;
-    case 'text-body':    return <TextBodyRenderer {...props} />;
-    case 'image-grid':   return <ImageGridRenderer {...props} />;
-    case 'video-embed':  return <VideoEmbedRenderer {...props} />;
-    case 'two-column':   return <TwoColumnRenderer {...props} />;
-    case 'callout':      return <CalloutRenderer {...props} />;
-    default:
-      // Unknown block types are silently skipped — forward compatibility
-      // for templates that may have been created with a newer block type
-      return null;
-  }
+/**
+ * Render a template by replacing {{variable}} placeholders with post data.
+ */
+export function renderTemplate(
+  htmlStructure: string,
+  post: Post,
+  publishedAt?: string
+): string {
+  return htmlStructure
+    .replace(/\{\{title\}\}/g, escapeHtml(post.title))
+    .replace(/\{\{content\}\}/g, post.content) // content is already HTML / markdown
+    .replace(/\{\{excerpt\}\}/g, escapeHtml(post.excerpt ?? ""))
+    .replace(/\{\{publishedAt\}\}/g, publishedAt ? new Date(publishedAt).toLocaleDateString() : "")
+    .replace(/\{\{category\}\}/g, escapeHtml(post.categoryName ?? ""))
+    .replace(/\{\{tags\}\}/g, post.tags.map(escapeHtml).join(", "))
+    .replace(/\{\{featuredImage\}\}/g, post.featuredImageUrl ?? "")
+    .replace(/\{\{#featuredImage\}\}[\s\S]*?\{\{\/featuredImage\}\}/g, (match) =>
+      post.featuredImageUrl
+        ? match.replace(/\{\{#featuredImage\}\}/, "").replace(/\{\{\/featuredImage\}\}/, "")
+        : ""
+    );
 }
 ```
+
+- `post.content` is trusted at this point: the .NET backend sanitizes it on write (see Backend spec). The public UI does not re-sanitize it, but it also must never accept or render any HTML that bypassed that write-time sanitization (e.g. never inject raw query params or client state through this path).
+- Every catalog template's `htmlStructure` renders all seven placeholders in the standard contract (`SPEC_DB.md`); the renderer does not need per-template branching logic beyond the `{{#featuredImage}}` conditional.
+- Exact excerpt/tag formatting and any additional placeholders: issue #40.
 
 ---
 
-## Block Renderers
-
-Each block renderer receives its block definition (for styles) and the pre-extracted field values for that block.
-
-### Shared Block Props Type
-
-```typescript
-// Used by all block renderers
-interface BlockRendererProps {
-  block: TemplateBlock;
-  fieldValues: Record<string, string>;  // field.id -> value string
-}
-```
-
-### Padding + Background Style Helpers
-
-```typescript
-// Used inside block renderers to apply block-level styles
-const PADDING_CLASSES: Record<string, string> = {
-  'none':    'py-0',
-  'compact': 'py-4',
-  'normal':  'py-8',
-  'wide':    'py-16',
-};
-
-const BACKGROUND_CLASSES: Record<string, string> = {
-  'default': '',
-  'muted':   'bg-default-50',
-  'accent':  'bg-primary-50',
-};
-
-function blockClasses(block: TemplateBlock): string {
-  return [
-    PADDING_CLASSES[block.styles.padding] ?? 'py-8',
-    BACKGROUND_CLASSES[block.styles.background] ?? '',
-  ].filter(Boolean).join(' ');
-}
-```
-
-### HeroBlockRenderer
-
-```tsx
-// components/post-renderer/blocks/HeroBlockRenderer.tsx
-
-import Image from 'next/image';
-import { TemplateBlock } from '@/lib/types';
-
-interface Props { block: TemplateBlock; fieldValues: Record<string, string>; }
-
-export function HeroBlockRenderer({ block, fieldValues }: Props) {
-  // Find fields by type within this block — hero block has a defined field structure
-  const imageField = block.fields.find(f => f.type === 'image');
-  const headlineField = block.fields.find(f => f.label.toLowerCase().includes('headline') || f.type === 'text');
-  const subheadingField = block.fields.find(f => f.label.toLowerCase().includes('subheading'));
-
-  const imageUrl = imageField ? fieldValues[imageField.id] : null;
-  const headline = headlineField ? fieldValues[headlineField.id] : null;
-  const subheading = subheadingField ? fieldValues[subheadingField.id] : null;
-
-  const alignment = block.styles.alignment === 'center' ? 'text-center items-center' : 'text-left items-start';
-
-  return (
-    <section className={`flex flex-col gap-4 ${alignment}`}>
-      {imageUrl && (
-        <div className="relative w-full aspect-video rounded-xl overflow-hidden">
-          <Image
-            src={imageUrl}
-            alt={headline ?? 'Hero image'}
-            fill
-            className="object-cover"
-            priority  // hero images are above the fold — prioritize LCP
-          />
-        </div>
-      )}
-      {headline && <h2 className="text-3xl font-bold">{headline}</h2>}
-      {subheading && <p className="text-lg text-default-500">{subheading}</p>}
-    </section>
-  );
-}
-```
-
-### TextBodyRenderer
-
-Rich text is rendered server-side using Tiptap's `generateHTML` — no client bundle required.
-
-```tsx
-// components/post-renderer/blocks/TextBodyRenderer.tsx
-
-import { TemplateBlock } from '@/lib/types';
-import { RichTextFieldRenderer } from '../fields/RichTextFieldRenderer';
-
-interface Props { block: TemplateBlock; fieldValues: Record<string, string>; }
-
-export function TextBodyRenderer({ block, fieldValues }: Props) {
-  const bodyField = block.fields.find(f => f.type === 'rich-text');
-  if (!bodyField) return null;
-
-  return (
-    <section>
-      <RichTextFieldRenderer value={fieldValues[bodyField.id] ?? ''} />
-    </section>
-  );
-}
-```
-
-### RichTextFieldRenderer
-
-```tsx
-// components/post-renderer/fields/RichTextFieldRenderer.tsx
-
-import { renderRichText } from '@/lib/tiptap-renderer';
-
-interface Props { value: string; }
-
-export function RichTextFieldRenderer({ value }: Props) {
-  if (!value) return null;
-
-  // renderRichText handles empty/invalid JSON gracefully and returns sanitized HTML
-  const html = renderRichText(value);
-  if (!html) return null;
-
-  return (
-    <div
-      className="prose prose-lg max-w-none"
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
-}
-```
-
-### Server-Side Rich Text Renderer
-
-```typescript
-// lib/tiptap-renderer.ts
-// This file runs server-side only. Do not import it in client components.
-
-import { generateHTML } from '@tiptap/html';
-import StarterKit from '@tiptap/starter-kit';
-import Image from '@tiptap/extension-image';
-import Link from '@tiptap/extension-link';
-import DOMPurify from 'isomorphic-dompurify';
-
-const EXTENSIONS = [StarterKit, Image, Link];
-
-export function renderRichText(jsonString: string): string {
-  if (!jsonString) return '';
-
-  try {
-    const json = JSON.parse(jsonString);
-    const html = generateHTML(json, EXTENSIONS);
-    // Sanitize before returning — defense in depth against XSS even from our own storage
-    return DOMPurify.sanitize(html, {
-      ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'h1', 'h2', 'h3', 'h4',
-                     'ul', 'ol', 'li', 'blockquote', 'a', 'img', 'hr'],
-      ALLOWED_ATTR: ['href', 'src', 'alt', 'target', 'rel', 'class'],
-    });
-  } catch {
-    // Malformed JSON stored in rich-text field — render nothing, log for investigation
-    console.error('[renderRichText] Failed to parse Tiptap JSON:', jsonString.slice(0, 100));
-    return '';
-  }
-}
-```
-
-### ImageGridRenderer
-
-```tsx
-// components/post-renderer/blocks/ImageGridRenderer.tsx
-
-import Image from 'next/image';
-import { TemplateBlock } from '@/lib/types';
-
-interface Props { block: TemplateBlock; fieldValues: Record<string, string>; }
-
-export function ImageGridRenderer({ block, fieldValues }: Props) {
-  const imageFields = block.fields.filter(f => f.type === 'image');
-  const columns = block.styles.columns ?? 2;
-
-  const gridClass = {
-    1: 'grid-cols-1',
-    2: 'grid-cols-1 sm:grid-cols-2',
-    3: 'grid-cols-1 sm:grid-cols-3',
-  }[columns] ?? 'grid-cols-2';
-
-  return (
-    <section className={`grid ${gridClass} gap-4`}>
-      {imageFields.map(field => {
-        const url = fieldValues[field.id];
-        if (!url) return null;
-        return (
-          <div key={field.id} className="relative aspect-video rounded-lg overflow-hidden">
-            <Image src={url} alt={field.label} fill className="object-cover" />
-          </div>
-        );
-      })}
-    </section>
-  );
-}
-```
-
-### VideoEmbedRenderer
-
-Stores a URL string (YouTube, Vimeo, etc.). Renders as an `<iframe>` — requires `'use client'` only if interactivity beyond play is needed. A static iframe embed is fine as a Server Component.
-
-```tsx
-// components/post-renderer/blocks/VideoEmbedRenderer.tsx
-
-import { TemplateBlock } from '@/lib/types';
-
-interface Props { block: TemplateBlock; fieldValues: Record<string, string>; }
-
-function toEmbedUrl(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-
-    // YouTube
-    if (parsed.hostname.includes('youtube.com') && parsed.searchParams.get('v')) {
-      return `https://www.youtube.com/embed/${parsed.searchParams.get('v')}`;
-    }
-    if (parsed.hostname === 'youtu.be') {
-      return `https://www.youtube.com/embed${parsed.pathname}`;
-    }
-
-    // Vimeo
-    if (parsed.hostname.includes('vimeo.com')) {
-      const id = parsed.pathname.split('/').filter(Boolean).pop();
-      return id ? `https://player.vimeo.com/video/${id}` : null;
-    }
-
-    return null; // unsupported provider
-  } catch {
-    return null;
-  }
-}
-
-export function VideoEmbedRenderer({ block, fieldValues }: Props) {
-  const urlField = block.fields.find(f => f.type === 'video-url');
-  const captionField = block.fields.find(f => f.type === 'text');
-
-  if (!urlField) return null;
-  const rawUrl = fieldValues[urlField.id];
-  const embedUrl = rawUrl ? toEmbedUrl(rawUrl) : null;
-  const caption = captionField ? fieldValues[captionField.id] : null;
-
-  if (!embedUrl) return null;
-
-  return (
-    <figure>
-      <div className="relative w-full aspect-video rounded-xl overflow-hidden">
-        <iframe
-          src={embedUrl}
-          className="absolute inset-0 w-full h-full"
-          allowFullScreen
-          title={caption ?? 'Embedded video'}
-          // Content Security Policy: ensure your NGINX config allows frame-src for youtube.com and vimeo.com
-        />
-      </div>
-      {caption && (
-        <figcaption className="text-sm text-default-400 text-center mt-2">{caption}</figcaption>
-      )}
-    </figure>
-  );
-}
-```
-
-### TwoColumnRenderer
-
-```tsx
-// components/post-renderer/blocks/TwoColumnRenderer.tsx
-
-import { TemplateBlock } from '@/lib/types';
-import { RichTextFieldRenderer } from '../fields/RichTextFieldRenderer';
-
-interface Props { block: TemplateBlock; fieldValues: Record<string, string>; }
-
-export function TwoColumnRenderer({ block, fieldValues }: Props) {
-  const [leftField, rightField] = block.fields;
-
-  return (
-    // Two-column on desktop, single column on mobile
-    <section className="grid grid-cols-1 md:grid-cols-2 gap-8">
-      <div>
-        {leftField && <RichTextFieldRenderer value={fieldValues[leftField.id] ?? ''} />}
-      </div>
-      <div>
-        {rightField && <RichTextFieldRenderer value={fieldValues[rightField.id] ?? ''} />}
-      </div>
-    </section>
-  );
-}
-```
-
-Note: The `react-resizable-panels` drag handle is an **editor-only** concern. The public renderer for two-column blocks uses a fixed CSS grid — there is no runtime column resizing on the public page. The column proportions on the public page are always 50/50.
-
-### CalloutRenderer
-
-```tsx
-// components/post-renderer/blocks/CalloutRenderer.tsx
-
-import { TemplateBlock } from '@/lib/types';
-
-interface Props { block: TemplateBlock; fieldValues: Record<string, string>; }
-
-const BACKGROUND_STYLES: Record<string, string> = {
-  'default': 'bg-default-100 border-default-300',
-  'muted':   'bg-default-50 border-default-200',
-  'accent':  'bg-primary-50 border-primary-200',
-};
-
-export function CalloutRenderer({ block, fieldValues }: Props) {
-  const textField = block.fields.find(f => f.type === 'text');
-  if (!textField) return null;
-
-  const text = fieldValues[textField.id];
-  if (!text) return null;
-
-  const bgClass = BACKGROUND_STYLES[block.styles.background] ?? BACKGROUND_STYLES['default'];
-
-  return (
-    <aside className={`border-l-4 rounded-r-xl px-6 py-4 ${bgClass}`}>
-      <p className="text-base font-medium">{text}</p>
-    </aside>
-  );
-}
-```
-
----
-
-## NGINX Configuration Notes
-
-Add these headers to your NGINX server block to support video embeds and image serving:
+## NGINX / Media Notes
 
 ```nginx
-# Allow YouTube and Vimeo in iframes
-add_header Content-Security-Policy "frame-src 'self' https://www.youtube.com https://player.vimeo.com";
-
 # Media proxy to SeaweedFS (images)
 location /media/ {
     proxy_pass http://127.0.0.1:8888/posts/images/;
@@ -640,11 +245,10 @@ location /media/ {
 
 ## What the Agent Must NOT Do
 
-- Do not import `@tiptap/react` or any Tiptap React components in public page or renderer files — use only `@tiptap/html` for server-side rendering
-- Do not add `'use client'` to block renderer components — they are Server Components and must remain so
-- Do not render `template_snapshot` as anything other than `TemplateDefinition` — it must be deserialized before being passed to `PostRenderer`
-- Do not render raw user-supplied HTML without passing through `renderRichText` (which includes DOMPurify sanitization)
-- Do not fall through with an error when `fieldValues[field.id]` is `undefined` — default to empty string and render nothing for that field
-- Do not include the admin API key or admin session token in any file inside `app/(public)/`
+- Do not build a block-renderer component tree (`HeroBlockRenderer`, `TextBodyRenderer`, etc.) or field-type renderer components — rendering is placeholder substitution into a single catalog template, not block iteration
+- Do not read or reference a publish-time template snapshot column or type anywhere — it does not exist; the public page always renders the post's *current* content against its *currently selected* catalog template
+- Do not add `'use client'` to the post page or renderer — they must remain Server Components
+- Do not re-sanitize or strip `post.content` in the public UI on the assumption it might be unsafe — the trust boundary is the .NET API's write-time sanitization (Backend spec); the public UI's job is to trust that boundary, not duplicate it, and never to introduce a second path that bypasses it
+- Do not include any admin session token, cookie, or header in any file inside `app/(public)/`
 - The `generateStaticParams` function must call the public `listPublished` endpoint, not an admin endpoint
-- Do not construct embed URLs via string concatenation — use the `toEmbedUrl` helper which validates via `URL` constructor
+- Do not invent finalized response shapes, pagination, or additional placeholders beyond the standard seven-placeholder contract — reference the relevant issue (#39–#41) instead

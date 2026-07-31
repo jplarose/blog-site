@@ -1,38 +1,19 @@
-using System.Text.Json;
-
 namespace BlogSite.Api.DTOs;
 
+/// <summary>Summary view of a fixed catalog layout template for list display.</summary>
 public record LayoutTemplateSummaryDto(
     int Id,
+    string TemplateKey,
     string Name,
-    string Description,
-    bool IsDefault,
-    int CategoryCount,
-    int PostCount,
-    DateTime CreatedAt,
-    DateTime UpdatedAt
+    string Description
 );
 
+/// <summary>Full catalog layout template, including renderable markup and styles.</summary>
 public record LayoutTemplateDto(
     int Id,
+    string TemplateKey,
     string Name,
     string Description,
-    JsonElement Layout,
-    bool IsDefault,
-    DateTime CreatedAt,
-    DateTime UpdatedAt
-);
-
-public record CreateLayoutTemplateRequest(
-    string Name,
-    string Description,
-    JsonElement Layout,
-    bool IsDefault
-);
-
-public record UpdateLayoutTemplateRequest(
-    string Name,
-    string Description,
-    JsonElement Layout,
-    bool IsDefault
+    string HtmlStructure,
+    string CssStyles
 );

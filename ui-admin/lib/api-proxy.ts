@@ -1,15 +1,25 @@
 import "server-only";
 
+import { refreshTokenInternal } from "@/lib/auth/auth-api";
+import { isDevAuthBypassEnabled, mintDevAccessToken } from "@/lib/auth/dev-bypass";
+import {
+  buildClearedCookieHeaders,
+  buildSessionCookieHeaders,
+  getAccessToken,
+  getRefreshToken,
+} from "@/lib/auth/session";
+
 const BACKEND_API_BASE_URL =
   process.env.DOTNET_APP_BASE_URL ??
   process.env.NEXT_PUBLIC_API_URL ??
   "http://localhost:5000";
 
+// `cookie` and `authorization` are intentionally excluded: the browser's cookies
+// must never leak to the .NET API, and the Authorization header is set server-side
+// from the session's access token cookie instead of trusting an incoming header.
 const REQUEST_HEADER_ALLOWLIST = [
   "accept",
-  "authorization",
   "content-type",
-  "cookie",
   "if-match",
   "if-none-match",
 ] as const;
@@ -31,7 +41,7 @@ function buildBackendUrl(path: string, request: Request) {
   return `${normalizedBaseUrl}${path}${incomingUrl.search}`;
 }
 
-function buildProxyHeaders(request: Request) {
+function buildProxyHeaders(request: Request, accessToken: string | null) {
   const headers = new Headers();
 
   for (const headerName of REQUEST_HEADER_ALLOWLIST) {
@@ -39,6 +49,10 @@ function buildProxyHeaders(request: Request) {
     if (value) {
       headers.set(headerName, value);
     }
+  }
+
+  if (accessToken) {
+    headers.set("authorization", `Bearer ${accessToken}`);
   }
 
   return headers;
@@ -56,33 +70,74 @@ function buildResponseHeaders(headers: Headers) {
   return forwardedHeaders;
 }
 
-async function buildRequestBody(request: Request) {
+/**
+ * Buffers the request body once (as an ArrayBuffer) so it can be resent
+ * unchanged if the proxy needs to retry the request after a token refresh.
+ */
+async function readRequestBody(request: Request): Promise<ArrayBuffer | undefined> {
   if (request.method === "GET" || request.method === "HEAD") {
     return undefined;
-  }
-
-  const contentType = request.headers.get("content-type") ?? "";
-
-  if (contentType.includes("application/json")) {
-    const body = await request.text();
-    return body.length > 0 ? body : undefined;
   }
 
   const body = await request.arrayBuffer();
   return body.byteLength > 0 ? body : undefined;
 }
 
-export async function proxyApiRequest(request: Request, path: string) {
-  const backendResponse = await fetch(buildBackendUrl(path, request), {
-    method: request.method,
-    headers: buildProxyHeaders(request),
-    body: await buildRequestBody(request),
-    cache: "no-store",
+function unauthorizedResponse(): Response {
+  const headers = new Headers({ "content-type": "application/json" });
+  for (const cookie of buildClearedCookieHeaders()) {
+    headers.append("set-cookie", cookie);
+  }
+  return new Response(JSON.stringify({ error: "Unauthorized" }), {
+    status: 401,
+    headers,
   });
+}
 
-  return new Response(backendResponse.body, {
-    status: backendResponse.status,
-    statusText: backendResponse.statusText,
-    headers: buildResponseHeaders(backendResponse.headers),
+export async function proxyApiRequest(request: Request, path: string) {
+  const backendUrl = buildBackendUrl(path, request);
+  const requestBody = await readRequestBody(request);
+  const accessToken =
+    getAccessToken(request) ?? (isDevAuthBypassEnabled() ? mintDevAccessToken() : null);
+
+  const sendToBackend = (token: string | null) =>
+    fetch(backendUrl, {
+      method: request.method,
+      headers: buildProxyHeaders(request, token),
+      body: requestBody,
+      cache: "no-store",
+    });
+
+  const backendResponse = await sendToBackend(accessToken);
+
+  if (backendResponse.status !== 401) {
+    return new Response(backendResponse.body, {
+      status: backendResponse.status,
+      statusText: backendResponse.statusText,
+      headers: buildResponseHeaders(backendResponse.headers),
+    });
+  }
+
+  // Attempt exactly one refresh-and-retry; never loop on repeated 401s.
+  const refreshToken = getRefreshToken(request);
+  if (!refreshToken) {
+    return unauthorizedResponse();
+  }
+
+  const refreshResult = await refreshTokenInternal(refreshToken);
+  if (!refreshResult.ok) {
+    return unauthorizedResponse();
+  }
+
+  const retryResponse = await sendToBackend(refreshResult.data.jwtToken);
+  const headers = buildResponseHeaders(retryResponse.headers);
+  for (const cookie of buildSessionCookieHeaders(refreshResult.data)) {
+    headers.append("set-cookie", cookie);
+  }
+
+  return new Response(retryResponse.body, {
+    status: retryResponse.status,
+    statusText: retryResponse.statusText,
+    headers,
   });
 }

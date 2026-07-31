@@ -1,0 +1,73 @@
+# Dev-mode stack: all three apps with hot reload, single command:
+#
+#   docker compose up
+#
+#   api       http://localhost:5017   (dotnet watch)
+#   ui-admin  http://localhost:3000   (next dev)
+#   ui-site   http://localhost:3001   (next dev)
+#
+# Uses host networking so every localhost URL in the apps' dev config works
+# unchanged, including the external Postgres (192.168.0.11) and SeaweedFS
+# (192.168.0.28) hosts. Source is bind-mounted for hot reload; node_modules,
+# .next, bin, and obj live in named volumes so container-built artifacts
+# never clash with ones built on the host.
+#
+# First start is slow (nuget restore + npm install); later starts reuse the
+# named volumes.
+
+services:
+  api:
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+    working_dir: /src
+    command: dotnet watch run --no-launch-profile --urls http://localhost:5017
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      # Inotify events don't cross the bind-mount boundary reliably.
+      DOTNET_USE_POLLING_FILE_WATCHER: "true"
+    network_mode: host
+    volumes:
+      - ./api:/src
+      - api-nuget:/root/.nuget
+      - api-bin:/src/bin
+      - api-obj:/src/obj
+
+  ui-admin:
+    image: node:22
+    working_dir: /app
+    # npm ci only when the volume is empty: keeps restarts fast and never
+    # rewrites the bind-mounted package-lock.json (container npm may differ
+    # from host npm and would churn the lockfile).
+    command: sh -c "[ -d node_modules/.bin ] || npm ci; npm run dev"
+    environment:
+      PORT: "3000"
+    network_mode: host
+    volumes:
+      - ./ui-admin:/app
+      - ui-admin-node-modules:/app/node_modules
+      - ui-admin-next:/app/.next
+    depends_on:
+      - api
+
+  ui-site:
+    image: node:22
+    working_dir: /app
+    command: sh -c "[ -d node_modules/.bin ] || npm ci; npm run dev"
+    environment:
+      PORT: "3001"
+      NEXT_PUBLIC_API_URL: http://localhost:5017
+    network_mode: host
+    volumes:
+      - ./ui-site:/app
+      - ui-site-node-modules:/app/node_modules
+      - ui-site-next:/app/.next
+    depends_on:
+      - api
+
+volumes:
+  api-nuget:
+  api-bin:
+  api-obj:
+  ui-admin-node-modules:
+  ui-admin-next:
+  ui-site-node-modules:
+  ui-site-next:

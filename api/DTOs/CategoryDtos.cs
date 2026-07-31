@@ -5,8 +5,6 @@ public record CategoryDto(
     string Name,
     string Slug,
     string? Description,
-    int? DefaultTemplateId,
-    string? DefaultTemplateName,
     int PostCount,
     DateTime CreatedAt,
     DateTime UpdatedAt
@@ -15,13 +13,11 @@ public record CategoryDto(
 public record CreateCategoryRequest(
     string Name,
     string Slug,
-    string? Description,
-    int? DefaultTemplateId
+    string? Description
 );
 
 public record UpdateCategoryRequest(
     string Name,
     string Slug,
-    string? Description,
-    int? DefaultTemplateId
+    string? Description
 );

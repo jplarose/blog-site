@@ -1,4 +1,4 @@
-import type { LayoutTemplate, PostTemplateContent, TemplateSummary } from "@/lib/template-schema";
+import type { CatalogTemplate, TemplateSummary } from "@/lib/catalog";
 
 export const API_BASE_URL = "";
 const SERVER_APP_BASE_URL =
@@ -13,7 +13,6 @@ export interface Post {
   title: string;
   slug: string;
   content: string;
-  templateContent?: PostTemplateContent;
   excerpt?: string;
   featuredImageUrl?: string;
   status: PostStatus;
@@ -22,6 +21,7 @@ export interface Post {
   categoryId?: number;
   categoryName?: string;
   templateId?: number;
+  templateKey?: string;
   templateName?: string;
   tags: string[];
   createdAt: string;
@@ -40,6 +40,7 @@ export interface PostSummary {
   categoryId?: number;
   categoryName?: string;
   templateId?: number;
+  templateKey?: string;
   templateName?: string;
   tags: string[];
   createdAt: string;
@@ -51,8 +52,6 @@ export interface Category {
   name: string;
   slug: string;
   description?: string;
-  defaultTemplateId?: number;
-  defaultTemplateName?: string;
   postCount: number;
   createdAt: string;
   updatedAt: string;
@@ -72,6 +71,8 @@ export interface AnalyticsSummary {
   totalPosts: number;
   publishedPosts: number;
   draftPosts: number;
+  scheduledPosts: number;
+  archivedPosts: number;
   topPosts: { postId: number; title: string; slug: string; viewCount: number }[];
   dailyViews: { date: string; viewCount: number }[];
 }
@@ -80,7 +81,23 @@ export interface MediaUpload {
   url: string;
 }
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+/** Distinguishable error thrown by `apiFetch` so callers can tell auth failures apart. */
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+/**
+ * Performs the fetch, applies the shared 401/error handling, and returns the
+ * raw `Response` so callers that need response headers (e.g. `X-Total-Count`)
+ * can read them before the body is consumed.
+ */
+async function apiFetchRaw(path: string, init?: RequestInit): Promise<Response> {
   const requestUrl =
     typeof window === "undefined"
       ? new URL(
@@ -95,16 +112,40 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,
   });
-  if (!res.ok) throw new Error(`API error ${res.status}: ${await res.text()}`);
+
+  if (!res.ok) {
+    if (res.status === 401 && typeof window !== "undefined") {
+      // The proxy already retried once with a refreshed token; a 401 here means
+      // the session is gone. Send the browser back to the login page.
+      window.location.assign("/login");
+      throw new ApiError(401, "Unauthorized");
+    }
+    throw new ApiError(res.status, `API error ${res.status}: ${await res.text()}`);
+  }
+
+  return res;
+}
+
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await apiFetchRaw(path, init);
   if (res.status === 204) return undefined as T;
   return res.json();
 }
 
+export interface PostListResult {
+  items: PostSummary[];
+  total: number;
+}
+
 // ---- Posts ----
 export const postsApi = {
-  list: (params?: Record<string, string>) => {
+  list: async (params?: Record<string, string>): Promise<PostListResult> => {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-    return apiFetch<PostSummary[]>(`/api/posts${qs}`);
+    const res = await apiFetchRaw(`/api/posts${qs}`);
+    const items = (await res.json()) as PostSummary[];
+    const totalHeader = res.headers.get("X-Total-Count");
+    const total = totalHeader !== null ? Number(totalHeader) : items.length;
+    return { items, total: Number.isNaN(total) ? items.length : total };
   },
   get: (id: number) => apiFetch<Post>(`/api/posts/${id}`),
   create: (data: unknown) =>
@@ -115,6 +156,13 @@ export const postsApi = {
     apiFetch<void>(`/api/posts/${id}`, { method: "DELETE" }),
   publish: (id: number) =>
     apiFetch<Post>(`/api/posts/${id}/publish`, { method: "POST" }),
+  schedule: (id: number, scheduledAt: string) =>
+    apiFetch<Post>(`/api/posts/${id}/schedule`, {
+      method: "POST",
+      body: JSON.stringify({ scheduledAt }),
+    }),
+  archive: (id: number) =>
+    apiFetch<Post>(`/api/posts/${id}/archive`, { method: "POST" }),
 };
 
 // ---- Categories ----
@@ -141,16 +189,10 @@ export const tagsApi = {
     apiFetch<void>(`/api/tags/${id}`, { method: "DELETE" }),
 };
 
-// ---- Templates ----
+// ---- Templates (read-only catalog; see issue #30) ----
 export const templatesApi = {
   list: () => apiFetch<TemplateSummary[]>("/api/layouttemplates"),
-  get: (id: number) => apiFetch<LayoutTemplate>(`/api/layouttemplates/${id}`),
-  create: (data: unknown) =>
-    apiFetch<LayoutTemplate>("/api/layouttemplates", { method: "POST", body: JSON.stringify(data) }),
-  update: (id: number, data: unknown) =>
-    apiFetch<LayoutTemplate>(`/api/layouttemplates/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-  delete: (id: number) =>
-    apiFetch<void>(`/api/layouttemplates/${id}`, { method: "DELETE" }),
+  get: (id: number) => apiFetch<CatalogTemplate>(`/api/layouttemplates/${id}`),
 };
 
 // ---- Analytics ----

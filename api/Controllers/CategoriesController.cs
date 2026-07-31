@@ -2,35 +2,55 @@ using BlogSite.Api.DTOs;
 using BlogSite.Api.Repositories;
 using BlogSite.Api.Results;
 using BlogSite.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BlogSite.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class CategoriesController(
     ICategoryRepository categories,
     CategoryService categoryService) : ControllerBase
 {
     /// <summary>Gets all categories and their post counts.</summary>
+    /// <remarks>
+    /// Identity-branched counts: an authenticated admin caller sees post
+    /// counts across all statuses; an anonymous caller's counts include
+    /// Published posts only, so public reads never reveal how many
+    /// unpublished posts exist.
+    /// </remarks>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(IEnumerable<CategoryDto>), StatusCodes.Status200OK)]
     public async Task<ActionResult<IEnumerable<CategoryDto>>> GetCategories(
         CancellationToken cancellationToken) =>
-        Ok(await categories.GetAllAsync(cancellationToken));
+        Ok(await categories.GetAllAsync(
+            publishedOnly: User.Identity?.IsAuthenticated != true,
+            cancellationToken));
 
     /// <summary>Gets a category by identifier.</summary>
+    /// <remarks>
+    /// Identity-branched counts: an authenticated admin caller sees the post
+    /// count across all statuses; an anonymous caller's count includes
+    /// Published posts only.
+    /// </remarks>
     /// <param name="id">Category identifier.</param>
     /// <param name="cancellationToken">Cancels the database operation.</param>
     [HttpGet("{id:int}")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<CategoryDto>> GetCategory(
         int id,
         CancellationToken cancellationToken)
     {
-        var category = await categories.GetByIdAsync(id, cancellationToken);
+        var category = await categories.GetByIdAsync(
+            id,
+            publishedOnly: User.Identity?.IsAuthenticated != true,
+            cancellationToken);
         return category is null ? NotFound() : Ok(category);
     }
 
@@ -40,6 +60,7 @@ public class CategoriesController(
     [HttpPost]
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<CategoryDto>> CreateCategory(
         [FromBody] CreateCategoryRequest request,
         CancellationToken cancellationToken)
@@ -61,6 +82,7 @@ public class CategoriesController(
     [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<CategoryDto>> UpdateCategory(
         int id,
         [FromBody] UpdateCategoryRequest request,
@@ -78,6 +100,7 @@ public class CategoriesController(
     [HttpDelete("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> DeleteCategory(
         int id,
         CancellationToken cancellationToken)
@@ -92,6 +115,9 @@ public class CategoriesController(
             "category.not_found" => NotFound(result.Error.Message),
             "category.name_required" => BadRequest(result.Error.Message),
             "category.slug_required" => BadRequest(result.Error.Message),
+            "category.slug_invalid" => BadRequest(result.Error.Message),
+            "category.duplicate_name" => Conflict(result.Error.Message),
+            "category.duplicate_slug" => Conflict(result.Error.Message),
             _ => BadRequest(result.Error?.Message ?? "The request could not be completed.")
         };
 
@@ -99,6 +125,7 @@ public class CategoriesController(
         result.Error?.Code switch
         {
             "category.not_found" => NotFound(result.Error.Message),
+            "category.referenced" => Conflict(result.Error.Message),
             _ => BadRequest(result.Error?.Message ?? "The request could not be completed.")
         };
 }

@@ -1,17 +1,18 @@
-# Spec: .NET Backend API — Blog Template System
+# Spec: .NET Backend API — Fixed Template Catalog
 
 ## Target Technology
-- .NET 8 minimal API or controller-based REST API (use whichever pattern already exists in the codebase)
+- .NET Web API (ASP.NET Core, minimal API or controller-based — match whatever pattern already exists in the codebase)
 - Dapper for all data access — no EF Core, no ORMs
 - PostgreSQL via `Npgsql` driver
+- JWT Bearer authentication issued by a shared external Auth API; the Next.js admin BFF holds the JWT in an HttpOnly cookie and forwards it to this API — see Auth Model below
 - All endpoints return `application/json`
 - Structured error responses on all failure paths (see Error Contract section)
 
 ## Confidence Notes for Agent
-- Assume Npgsql is already installed; if not, add `Npgsql` and `Dapper` via NuGet
-- Assume dependency injection is configured; register `IDbConnectionFactory` in the DI container
+- Assume Npgsql and Dapper are already installed and DI is configured; register `IDbConnectionFactory` in the DI container
 - Do not use `dynamic` for Dapper query results — always map to typed record/class
 - PostgreSQL parameter syntax is `@ParamName` with Npgsql/Dapper (not `$1`)
+- The detailed request/response contracts for the endpoints below (exact routes, DTOs, pagination/filtering shape, JWT validation specifics) are tracked in GitHub issues **#30–#34** and are not fully fixed yet. Where this spec would need to invent a contract those issues haven't settled, it stays high-level and defers to the issue rather than prescribing one.
 
 ---
 
@@ -27,20 +28,23 @@ Place new files under these paths (adjust to match existing project structure if
       CategoryRepository.cs
       CategoryModels.cs
     /Templates
-      TemplateEndpoints.cs
+      TemplateEndpoints.cs      — read-only catalog resource, see below
       TemplateRepository.cs
       TemplateModels.cs
     /Posts
       PostEndpoints.cs
       PostRepository.cs
       PostModels.cs
-      PostValidator.cs
+    /Analytics
+      AnalyticsEndpoints.cs
+      AnalyticsRepository.cs
   /Infrastructure
     DbConnectionFactory.cs
     Auth.cs
   /Common
     ErrorResponse.cs
     SlugHelper.cs
+    HtmlSanitizer.cs
 ```
 
 ---
@@ -86,33 +90,16 @@ builder.Services.AddSingleton<IDbConnectionFactory>(
 
 ---
 
-### Auth Abstraction
+## Auth Model
 
-Single-user MVP uses a static bearer token. The `GetSession` method is the only place this logic lives — when multi-user auth is added, only this method changes.
+BlogSite is a single-owner admin (no users/roles UI). Authentication is delegated to a **shared external Auth API**; this backend does not issue or store credentials itself. The flow, at a high level:
 
-```csharp
-// Infrastructure/Auth.cs
-public record Session(string UserId, bool IsAdmin);
+1. The admin signs in against the external Auth API from the Next.js admin BFF.
+2. The BFF stores the resulting JWT in an **HttpOnly cookie** — never exposed to client-side JavaScript.
+3. Protected admin requests from the BFF to this API carry that JWT as a Bearer token; this API validates the JWT (issuer/audience/signature) and treats a valid token as an authenticated admin session. There is no concept of multiple roles or permission levels — a valid token is the admin.
+4. Public/read endpoints (published posts, the template catalog) require no token.
 
-public static class Auth
-{
-    public static Session? GetSession(HttpRequest request, IConfiguration config)
-    {
-        var header = request.Headers.Authorization.FirstOrDefault();
-        var expected = $"Bearer {config["AdminApiKey"]}";
-
-        if (header == expected)
-        {
-            return new Session(
-                UserId: config["AdminUserId"] ?? "admin",
-                IsAdmin: true
-            );
-        }
-
-        return null;
-    }
-}
-```
+The exact JWT validation setup (issuer, audience, key source, refresh handling) is tracked in issue **#30** and is not fixed by this spec — implement standard ASP.NET Core JWT Bearer middleware against whatever the Auth API documents, and keep the validation logic isolated (e.g. in `Infrastructure/Auth.cs`) so it is the only place that changes if the Auth API's token shape changes.
 
 ---
 
@@ -132,13 +119,13 @@ Example responses:
 { "code": "VALIDATION_FAILED", "message": "One or more fields are invalid.", "errors": { "title": ["Title is required."] } }
 
 // 404
-{ "code": "NOT_FOUND", "message": "Post with id 'abc' was not found." }
+{ "code": "NOT_FOUND", "message": "Post with id 42 was not found." }
 
 // 409
 { "code": "CONFLICT", "message": "A category with slug 'tutorials' already exists." }
 
 // 401
-{ "code": "UNAUTHORIZED", "message": "Valid admin credentials are required." }
+{ "code": "UNAUTHORIZED", "message": "A valid admin session is required." }
 ```
 
 ---
@@ -170,460 +157,105 @@ public static class SlugHelper
 
 ---
 
-## JSONB Handling with Dapper + Npgsql
-
-Dapper does not know about PostgreSQL's `jsonb` type natively. You must handle serialization/deserialization explicitly. Use this pattern consistently across all repositories that touch JSONB columns.
-
-```csharp
-// In any repository reading JSONB columns, map the raw string then deserialize:
-var rows = await conn.QueryAsync<PostRow>(sql, parameters);
-
-// PostRow has JSONB columns as strings:
-public record PostRow(
-    Guid Id,
-    string Title,
-    string Slug,
-    string ContentJson,         // maps to posts.content
-    string? TemplateSnapshotJson // maps to posts.template_snapshot
-);
-
-// Then project to your domain model:
-var post = new Post
-{
-    Id = row.Id,
-    Content = JsonSerializer.Deserialize<Dictionary<string, string>>(row.ContentJson)!,
-    TemplateSnapshot = row.TemplateSnapshotJson is not null
-        ? JsonSerializer.Deserialize<TemplateDefinition>(row.TemplateSnapshotJson)
-        : null
-};
-```
-
-When writing JSONB back, serialize to string and pass as a typed NpgsqlParameter:
-
-```csharp
-var param = new NpgsqlParameter("@Definition", NpgsqlTypes.NpgsqlDbType.Jsonb)
-{
-    Value = JsonSerializer.Serialize(definition)
-};
-```
-
-Use `System.Text.Json` throughout — not Newtonsoft.
-
----
-
 ## Domain Models
+
+Models mirror the current schema (`SPEC_DB.md`) — `SERIAL` integer ids, not UUIDs.
 
 ```csharp
 // Features/Categories/CategoryModels.cs
-public record Category(Guid Id, string Name, string Slug, string? Description, DateTime CreatedAt, DateTime UpdatedAt);
+public record Category(int Id, string Name, string Slug, string? Description, DateTime CreatedAt, DateTime UpdatedAt);
 public record CreateCategoryRequest(string Name, string? Description);
 public record UpdateCategoryRequest(string Name, string? Description);
 
 // Features/Templates/TemplateModels.cs
-public record TemplateDefinition(List<TemplateBlock> Blocks);
-public record TemplateBlock(string Id, string Type, int Order, List<TemplateField> Fields, BlockStyles Styles);
-public record TemplateField(string Id, string Type, string Label, string? Placeholder, bool Required, int? MaxLength, string? AspectRatio);
-public record BlockStyles(string Padding, string Background, int? Columns, string Alignment);
-
-public record Template(Guid Id, Guid CategoryId, string Name, string? Description, TemplateDefinition Definition, DateTime CreatedAt, DateTime UpdatedAt);
-public record CreateTemplateRequest(Guid CategoryId, string Name, string? Description, TemplateDefinition Definition);
-public record UpdateTemplateRequest(string Name, string? Description, TemplateDefinition Definition);
+// Read-only catalog resource — no create/update/delete request types exist.
+public record LayoutTemplate(int Id, string TemplateKey, string Name, string Description, string HtmlStructure, string CssStyles, DateTime CreatedAt, DateTime UpdatedAt);
 
 // Features/Posts/PostModels.cs
 public record Post(
-    Guid Id, Guid TemplateId, Guid CategoryId,
-    string Title, string Slug,
-    Dictionary<string, string> Content,
-    TemplateDefinition? TemplateSnapshot,
-    bool Published, DateTime? PublishedAt,
+    int Id, string Title, string Slug,
+    string Content,               // sanitized rich HTML body — not a field-value map
+    string? Excerpt, string? FeaturedImageUrl,
+    string Status,                // Draft | Scheduled | Published | Archived
+    DateTime? PublishedAt, DateTime? ScheduledAt,
+    int? CategoryId, int? TemplateId,
     DateTime CreatedAt, DateTime UpdatedAt
 );
-public record CreatePostRequest(Guid TemplateId, Guid CategoryId, string Title, string? Slug);
-public record UpdatePostContentRequest(string Title, Dictionary<string, string> Content);
+public record CreatePostRequest(string Title, string? Slug, int? CategoryId, int? TemplateId);
+public record UpdatePostRequest(string Title, string Content, string? Excerpt, string? FeaturedImageUrl, int? CategoryId, int? TemplateId);
 ```
+
+There is no `TemplateDefinition`, `TemplateBlock`, `TemplateField`, or publish-time template-snapshot model anywhere in this API — the block/field template system was retired. A post's body is a single sanitized HTML string (`Content`), and its template is a single explicit foreign key (`TemplateId`) into the fixed catalog.
 
 ---
 
-## Endpoints
+## Endpoints (high level — see issues #30–#34 for finalized contracts)
+
+### Templates — read-only catalog
+
+```
+GET /api/layouttemplates          — list the fixed catalog (all rows; no admin auth required)
+GET /api/layouttemplates/{id}     — get a single catalog template
+```
+
+There is no `POST`, `PUT`, or `DELETE` for templates. The catalog is application-managed and seeded (`sql/seeds/002_catalog_templates.sql`); nothing in this API creates, edits, or deletes `layout_templates` rows. Any endpoint or repository method that would mutate `layout_templates` is out of scope and must not be added.
 
 ### Categories
 
 ```
-GET    /api/categories           — list all categories
+GET    /api/categories           — list all categories (public)
 POST   /api/categories           — create category [admin]
-GET    /api/categories/{slug}    — get single category by slug
+GET    /api/categories/{slug}    — get single category by slug (public)
 PUT    /api/categories/{id}      — update category [admin]
-DELETE /api/categories/{id}      — delete category [admin] (fails if templates or posts exist)
+DELETE /api/categories/{id}      — delete category [admin]
 ```
 
-**CategoryRepository.cs — key queries:**
-
-```csharp
-public async Task<IEnumerable<Category>> GetAllAsync()
-{
-    using var conn = _factory.CreateConnection();
-    return await conn.QueryAsync<Category>(
-        "SELECT id, name, slug, description, created_at, updated_at FROM categories ORDER BY name"
-    );
-}
-
-public async Task<Guid> CreateAsync(string name, string slug, string? description)
-{
-    using var conn = _factory.CreateConnection();
-    return await conn.ExecuteScalarAsync<Guid>(
-        @"INSERT INTO categories (name, slug, description)
-          VALUES (@Name, @Slug, @Description)
-          RETURNING id",
-        new { Name = name, Slug = slug, Description = description }
-    );
-}
-
-public async Task<bool> DeleteAsync(Guid id)
-{
-    // ON DELETE RESTRICT on templates and posts means this throws
-    // Npgsql.PostgresException with SqlState 23503 if references exist.
-    // Catch at the endpoint level and return 409.
-    using var conn = _factory.CreateConnection();
-    var affected = await conn.ExecuteAsync(
-        "DELETE FROM categories WHERE id = @Id",
-        new { Id = id }
-    );
-    return affected > 0;
-}
-```
-
-**CategoryEndpoints.cs — registration pattern:**
-
-```csharp
-public static class CategoryEndpoints
-{
-    public static IEndpointRouteBuilder MapCategoryEndpoints(this IEndpointRouteBuilder app)
-    {
-        var group = app.MapGroup("/api/categories");
-
-        group.MapGet("/", async (CategoryRepository repo) =>
-        {
-            var categories = await repo.GetAllAsync();
-            return Results.Ok(categories);
-        });
-
-        group.MapPost("/", async (
-            CreateCategoryRequest request,
-            CategoryRepository repo,
-            IConfiguration config,
-            HttpContext ctx) =>
-        {
-            var session = Auth.GetSession(ctx.Request, config);
-            if (session is null) return Results.Json(
-                new ErrorResponse("UNAUTHORIZED", "Valid admin credentials are required."),
-                statusCode: 401);
-
-            if (string.IsNullOrWhiteSpace(request.Name))
-                return Results.Json(
-                    new ErrorResponse("VALIDATION_FAILED", "Name is required."),
-                    statusCode: 400);
-
-            var slug = SlugHelper.Generate(request.Name);
-
-            try
-            {
-                var id = await repo.CreateAsync(request.Name, slug, request.Description);
-                return Results.Created($"/api/categories/{slug}", new { id, slug });
-            }
-            catch (Npgsql.PostgresException ex) when (ex.SqlState == "23505")
-            {
-                return Results.Json(
-                    new ErrorResponse("CONFLICT", $"A category with name '{request.Name}' already exists."),
-                    statusCode: 409);
-            }
-        });
-
-        // PUT and DELETE follow the same auth + error pattern — implement analogously
-
-        return app;
-    }
-}
-```
-
----
-
-### Templates
-
-```
-GET    /api/templates                        — list all templates (optional ?categoryId= filter)
-POST   /api/templates                        — create template [admin]
-GET    /api/templates/{id}                   — get single template by id
-PUT    /api/templates/{id}                   — update template [admin]
-DELETE /api/templates/{id}                   — delete template [admin] (fails if posts exist)
-GET    /api/categories/{categoryId}/templates — templates scoped to a category (used by post creation UI)
-```
-
-**TemplateRepository.cs — JSONB write example:**
-
-```csharp
-public async Task<Guid> CreateAsync(Guid categoryId, string name, string? description, TemplateDefinition definition)
-{
-    using var conn = _factory.CreateConnection();
-    // Must open the connection manually when using NpgsqlParameter typed parameters
-    await ((NpgsqlConnection)conn).OpenAsync();
-
-    var sql = @"
-        INSERT INTO templates (category_id, name, description, definition)
-        VALUES (@CategoryId, @Name, @Description, @Definition)
-        RETURNING id";
-
-    var command = new CommandDefinition(sql, new
-    {
-        CategoryId = categoryId,
-        Name = name,
-        Description = description,
-        // Pass as NpgsqlParameter to preserve jsonb type info
-        Definition = new NpgsqlParameter("@Definition", NpgsqlTypes.NpgsqlDbType.Jsonb)
-        {
-            Value = JsonSerializer.Serialize(definition)
-        }
-    });
-
-    // NOTE: Dapper does not support NpgsqlParameter inside anonymous objects cleanly.
-    // Use DynamicParameters instead:
-    var dp = new DynamicParameters();
-    dp.Add("CategoryId", categoryId);
-    dp.Add("Name", name);
-    dp.Add("Description", description);
-    dp.Add("Definition", JsonSerializer.Serialize(definition), DbType.String);
-
-    return await conn.ExecuteScalarAsync<Guid>(sql, dp);
-}
-```
-
-**Critical rule for template updates:** When updating a template's `definition`, the agent must preserve all existing field `id` values. New fields get new UUIDs; existing fields keep their IDs. The application receives the full updated definition from the client (which already carries existing field IDs) — do not regenerate IDs server-side on update. Simply persist what is received after validating the structure.
-
-```csharp
-public async Task<bool> UpdateAsync(Guid id, string name, string? description, TemplateDefinition definition)
-{
-    // Validate that all block IDs and field IDs in the definition are valid UUIDs
-    // Do NOT generate new IDs here — the client is responsible for ID stability
-    foreach (var block in definition.Blocks)
-    {
-        if (!Guid.TryParse(block.Id, out _))
-            throw new ArgumentException($"Block id '{block.Id}' is not a valid UUID.");
-        foreach (var field in block.Fields)
-        {
-            if (!Guid.TryParse(field.Id, out _))
-                throw new ArgumentException($"Field id '{field.Id}' is not a valid UUID.");
-        }
-    }
-
-    using var conn = _factory.CreateConnection();
-    var dp = new DynamicParameters();
-    dp.Add("Id", id);
-    dp.Add("Name", name);
-    dp.Add("Description", description);
-    dp.Add("Definition", JsonSerializer.Serialize(definition), DbType.String);
-
-    var affected = await conn.ExecuteAsync(
-        @"UPDATE templates SET name = @Name, description = @Description, definition = @Definition
-          WHERE id = @Id",
-        dp
-    );
-    return affected > 0;
-}
-```
-
----
+Categories carry no template default — there is no `defaultTemplateId` field on the category resource; template selection happens per post. Detailed request/response shapes: issue #31.
 
 ### Posts
 
 ```
-GET    /api/posts                  — list posts (optional ?published=true, ?categoryId=)
+GET    /api/posts                  — list posts [admin] (optional ?status=, ?categoryId= filters)
 POST   /api/posts                  — create post draft [admin]
-GET    /api/posts/{id}             — get post by id (admin; includes unpublished)
-GET    /api/posts/by-slug/{slug}   — get post by slug (public; published only)
-PUT    /api/posts/{id}/content     — save draft content [admin]
-POST   /api/posts/{id}/publish     — publish post [admin]
+GET    /api/posts/{id}             — get post by id [admin] (any status)
+GET    /api/posts/slug/{slug}      — get post by slug (public; Published only)
+PUT    /api/posts/{id}             — save draft content, including the selected template [admin]
+POST   /api/posts/{id}/publish     — transition a post to Published [admin]
 DELETE /api/posts/{id}             — delete post [admin]
 ```
 
-**PostRepository.cs — the publish transaction:**
+- A post's `TemplateId` is an explicit selection from the read-only catalog (`GET /api/layouttemplates`); there is no per-post template-content authoring step and no snapshot to populate at publish time — the renderer always combines the post's *current* `Content` with its *currently selected* catalog template.
+- `Content` is accepted from the admin editor as rich HTML and must be sanitized server-side before persistence (see HTML Sanitization below).
+- `/api/posts/slug/{slug}` must filter to `Published` status only — it is the public endpoint.
+- Full request/response DTOs, validation rules, and pagination/filtering shape: issues #32–#33.
 
-```csharp
-public async Task PublishAsync(Guid postId)
-{
-    // This must be atomic: fetch template definition and update post in one transaction.
-    // If the template is deleted between the SELECT and the UPDATE, the transaction catches it.
-    using var conn = (NpgsqlConnection)_factory.CreateConnection();
-    await conn.OpenAsync();
-    await using var tx = await conn.BeginTransactionAsync();
+### Analytics
 
-    try
-    {
-        // Lock the post row to prevent double-publish race conditions
-        var post = await conn.QuerySingleOrDefaultAsync<(Guid Id, Guid TemplateId, bool Published)>(
-            "SELECT id, template_id, published FROM posts WHERE id = @Id FOR UPDATE",
-            new { Id = postId },
-            transaction: tx
-        );
-
-        if (post == default)
-            throw new KeyNotFoundException($"Post '{postId}' not found.");
-
-        if (post.Published)
-            throw new InvalidOperationException("Post is already published.");
-
-        // Fetch the live template definition to snapshot
-        var templateDefinitionJson = await conn.ExecuteScalarAsync<string>(
-            "SELECT definition FROM templates WHERE id = @Id",
-            new { Id = post.TemplateId },
-            transaction: tx
-        );
-
-        if (templateDefinitionJson is null)
-            throw new InvalidOperationException("Template not found — cannot publish without a valid template.");
-
-        await conn.ExecuteAsync(
-            @"UPDATE posts
-              SET template_snapshot = @Snapshot::jsonb,
-                  published = true,
-                  published_at = now()
-              WHERE id = @Id",
-            new { Snapshot = templateDefinitionJson, Id = postId },
-            transaction: tx
-        );
-
-        await tx.CommitAsync();
-    }
-    catch
-    {
-        await tx.RollbackAsync();
-        throw;
-    }
-}
+```
+GET /api/analytics/summary?days=30 — dashboard summary [admin]: views, unique visitors, post-state counts, daily views, top posts
+POST /api/analytics/pageview       — record a page view (public, called by ui-site)
 ```
 
-**PostEndpoints.cs — publish endpoint with validation:**
+Finalized contract (issue #42) — dashboard-ready with no client-side aggregation required:
 
-```csharp
-group.MapPost("/{id:guid}/publish", async (
-    Guid id,
-    PostRepository postRepo,
-    PostValidator validator,
-    IConfiguration config,
-    HttpContext ctx) =>
-{
-    var session = Auth.GetSession(ctx.Request, config);
-    if (session is null) return Results.Json(
-        new ErrorResponse("UNAUTHORIZED", "Valid admin credentials are required."),
-        statusCode: 401);
-
-    // Validate required fields before publishing
-    var post = await postRepo.GetByIdAsync(id);
-    if (post is null) return Results.Json(
-        new ErrorResponse("NOT_FOUND", $"Post '{id}' not found."),
-        statusCode: 404);
-
-    // Fetch the live template to validate against
-    var template = await templateRepo.GetByIdAsync(post.TemplateId);
-    var validationErrors = validator.ValidateContent(post.Content, template!.Definition);
-
-    if (validationErrors.Any())
-        return Results.Json(
-            new ErrorResponse("VALIDATION_FAILED", "Required fields are missing or empty.", validationErrors),
-            statusCode: 422);
-
-    try
-    {
-        await postRepo.PublishAsync(id);
-        return Results.Ok(new { published = true });
-    }
-    catch (InvalidOperationException ex)
-    {
-        return Results.Json(new ErrorResponse("CONFLICT", ex.Message), statusCode: 409);
-    }
-});
-```
+- **Range validation**: `days` must be `1 ≤ days ≤ 365`; out-of-range values return `400` with a clear message. Default `30`.
+- **`AnalyticsSummaryDto` shape**: `TotalPageViews`, `UniqueVisitors`, `TotalPosts`, `PublishedPosts`, `DraftPosts`, `ScheduledPosts`, `ArchivedPosts` (all four post states plus total), `TopPosts` (`PostId`/`Title`/`Slug`/`ViewCount`), `DailyViews` (`Date`/`ViewCount`).
+- **Window semantics**: the window is a UTC *calendar-date* range, not a moving instant. `Since = today_utc - (days - 1)`, `Until = today_utc` (inclusive) — so `days=30` means today plus the previous 29 days. Totals, top posts, and the daily series all use this same boundary (`viewed_at >= Since AND viewed_at < Until + 1 day`), so they can never disagree with each other.
+- **Daily series**: always contiguous and exactly `days` entries long, oldest to newest, zero-filled for days with no views (gap-filling happens in C# after an indexed, grouped SQL query — see `AnalyticsAggregation.BuildDailySeries`). An empty period returns an all-zero series, never a short or empty one.
+- **Top posts**: fixed limit of 5, ordered by `ViewCount` descending with `PostId` ascending as a deterministic tiebreak (`AnalyticsAggregation.RankTopPosts`). Only counts views of posts that still exist (inner join to `posts`). Empty period returns `[]`, never `null`.
+- **Post-state counts**: one `GROUP BY status` query against `posts`, not four separate scans; `TotalPosts` is the sum of the four state counts.
 
 ---
 
-## PostValidator
+## HTML Sanitization
 
-This is where required field validation and the Tiptap empty-document case are handled.
-
-```csharp
-// Features/Posts/PostValidator.cs
-using System.Text.Json;
-
-public class PostValidator
-{
-    // Tiptap produces this structure for an empty document (user opened editor, typed nothing).
-    // A paragraph node with no text children is visually empty but structurally non-empty JSON.
-    // We must detect both forms.
-    private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
-
-    public Dictionary<string, string[]> ValidateContent(
-        Dictionary<string, string> content,
-        TemplateDefinition definition)
-    {
-        var errors = new Dictionary<string, string[]>();
-
-        foreach (var block in definition.Blocks)
-        {
-            foreach (var field in block.Fields)
-            {
-                if (!field.Required) continue;
-
-                content.TryGetValue(field.Id, out var value);
-
-                var isEmpty = field.Type switch
-                {
-                    "rich-text" => IsRichTextEmpty(value),
-                    "tag-list"  => string.IsNullOrWhiteSpace(value) || value == "[]",
-                    _           => string.IsNullOrWhiteSpace(value)
-                };
-
-                if (isEmpty)
-                {
-                    errors[field.Id] = new[] { $"'{field.Label}' is required." };
-                }
-            }
-        }
-
-        return errors;
-    }
-
-    private static bool IsRichTextEmpty(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json)) return true;
-
-        try
-        {
-            var doc = JsonSerializer.Deserialize<TiptapDocument>(json, _jsonOptions);
-            if (doc?.Content is null || doc.Content.Count == 0) return true;
-
-            // A single paragraph node with no children (or only empty text nodes) is empty
-            return doc.Content.All(node =>
-                node.Type == "paragraph" &&
-                (node.Content is null || node.Content.Count == 0 ||
-                 node.Content.All(child => child.Type == "text" &&
-                                           string.IsNullOrEmpty(child.Text))));
-        }
-        catch (JsonException)
-        {
-            // Unparseable content is treated as empty — do not publish malformed rich text
-            return true;
-        }
-    }
-
-    // Minimal deserialization targets for Tiptap JSON — only what we need for empty detection
-    private record TiptapDocument(string Type, List<TiptapNode>? Content);
-    private record TiptapNode(string Type, List<TiptapNode>? Content, string? Text);
-}
-```
+Post `Content` is rich HTML authored in the admin editor. It must be sanitized server-side (allow-listed tags/attributes; no `<script>`, no inline event handlers, no `javascript:`/`data:` URLs) before being persisted or ever echoed back — this API is the trust boundary between admin input and both the stored value and the public renderer. Centralize this in `Common/HtmlSanitizer.cs` so there is exactly one sanitization implementation shared by every write path that touches `posts.content`. The specific library/allow-list is not fixed by this spec; treat it as an implementation detail bounded by "never persist or serve unsanitized post HTML."
 
 ---
 
-## Image Upload Endpoint
+## Image Upload
 
-The Next.js layer handles upload proxying to SeaweedFS (see Admin UI spec). The .NET API does not handle file uploads — it only stores and serves URL strings as field values within post content. If the project architecture later requires the .NET API to proxy uploads, add it then.
+The Next.js admin BFF handles upload proxying to SeaweedFS directly (see Admin UI spec). The .NET API does not handle file uploads — it only stores and serves URL strings as post field values (`featured_image_url`, and image URLs embedded in sanitized post `content`).
 
 ---
 
@@ -632,7 +264,9 @@ The Next.js layer handles upload proxying to SeaweedFS (see Admin UI spec). The 
 - Do not use `dynamic` as a Dapper return type
 - Do not use EF Core, no `DbContext`, no migrations via EF
 - Do not swallow exceptions silently — all catch blocks must either rethrow or return a structured error response
-- Do not generate new UUIDs for existing template field IDs on update operations
+- Do not add `POST`, `PUT`, or `DELETE` endpoints for `/api/layouttemplates` — the catalog is read-only and fixed at three seeded rows
+- Do not add a per-post template-content field, a block/field JSONB content model, or any publish-time template-snapshotting behavior to the Posts feature — posts carry a single sanitized HTML `Content` string plus an explicit `TemplateId`
+- Do not persist or return post `Content` without passing it through the shared HTML sanitizer first
 - Do not return `500` errors with exception stack traces to the client — log the exception server-side, return a generic `ErrorResponse` with code `INTERNAL_ERROR`
-- Do not add endpoints that return unpublished post content without an admin session check
-- The `/api/posts/by-slug/{slug}` endpoint must filter `WHERE published = true` — it is the public endpoint
+- Do not add endpoints that return unpublished (non-`Published`) post content without a validated admin JWT
+- Do not invent JWT validation details, pagination shapes, or DTO fields beyond what is stated here — reference the relevant issue (#30–#34) instead

@@ -1,22 +1,26 @@
 using BlogSite.Api.DTOs;
 using Dapper;
 using System.Data;
-using System.Text.Json;
 
 namespace BlogSite.Api.Repositories;
 
+/// <param name="PublishedOnly">
+/// When <c>true</c>, restricts the list to Published posts and overrides
+/// <paramref name="Status"/> regardless of its value. Used to enforce the
+/// anonymous-caller view (see <c>PostsController.GetPosts</c>) without
+/// leaking non-Published posts through a status filter.
+/// </param>
 public sealed record PostListQuery(
     string? Status,
     int? CategoryId,
     string? Tag,
     int Page,
-    int PageSize);
+    int PageSize,
+    bool PublishedOnly = false);
 
 public sealed record PostPage(
     IReadOnlyList<PostSummaryDto> Posts,
     int TotalCount);
-
-public sealed record PostTagWrite(string Name, string Slug);
 
 public sealed record PostWrite(
     string Title,
@@ -28,16 +32,24 @@ public sealed record PostWrite(
     DateTime? ScheduledAt,
     int? CategoryId,
     int? TemplateId,
-    PostTemplateContentDto? TemplateContent,
-    IReadOnlyList<PostTagWrite> Tags);
+    IReadOnlyList<int> TagIds);
 
 public interface IPostRepository
 {
     Task<PostPage> GetAllAsync(
         PostListQuery query,
         CancellationToken cancellationToken);
-    Task<PostDto?> GetByIdAsync(int id, CancellationToken cancellationToken);
-    Task<PostDto?> GetBySlugAsync(string slug, CancellationToken cancellationToken);
+    /// <param name="publishedOnly">
+    /// When <c>true</c>, only returns the post if its status is Published;
+    /// otherwise behaves as a not-found lookup for non-Published posts.
+    /// </param>
+    Task<PostDto?> GetByIdAsync(int id, bool publishedOnly, CancellationToken cancellationToken);
+
+    /// <param name="publishedOnly">
+    /// When <c>true</c>, only returns the post if its status is Published;
+    /// otherwise behaves as a not-found lookup for non-Published posts.
+    /// </param>
+    Task<PostDto?> GetBySlugAsync(string slug, bool publishedOnly, CancellationToken cancellationToken);
     Task<PostDto> CreateAsync(PostWrite post, CancellationToken cancellationToken);
     Task<PostDto?> UpdateAsync(
         int id,
@@ -45,6 +57,12 @@ public interface IPostRepository
         CancellationToken cancellationToken);
     Task<bool> DeleteAsync(int id, CancellationToken cancellationToken);
     Task<PostDto?> PublishAsync(int id, CancellationToken cancellationToken);
+    Task<bool> ExistsAsync(int id, CancellationToken cancellationToken);
+    Task<PostDto?> ScheduleAsync(
+        int id,
+        DateTime scheduledAt,
+        CancellationToken cancellationToken);
+    Task<PostDto?> ArchiveAsync(int id, CancellationToken cancellationToken);
 }
 
 public sealed class PostRepository(IDbConnection db) : IPostRepository
@@ -63,8 +81,8 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
             post.category_id AS CategoryId,
             category.name AS CategoryName,
             post.template_id AS TemplateId,
+            template.template_key AS TemplateKey,
             template.name AS TemplateName,
-            post.template_content::text AS TemplateContentJson,
             post.created_at AS CreatedAt,
             post.updated_at AS UpdatedAt
         FROM posts AS post
@@ -81,7 +99,14 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
         var predicates = new List<string>();
         var parameters = new DynamicParameters();
 
-        if (!string.IsNullOrWhiteSpace(query.Status))
+        if (query.PublishedOnly)
+        {
+            // PublishedOnly overrides any requested Status filter — this is
+            // the anonymous-caller view and must never surface non-Published
+            // posts, regardless of what the caller asked for.
+            predicates.Add("post.status = 'Published'");
+        }
+        else if (!string.IsNullOrWhiteSpace(query.Status))
         {
             predicates.Add("post.status = @Status");
             parameters.Add("Status", query.Status);
@@ -134,6 +159,7 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
                 post.category_id AS CategoryId,
                 category.name AS CategoryName,
                 post.template_id AS TemplateId,
+                template.template_key AS TemplateKey,
                 template.name AS TemplateName,
                 post.created_at AS CreatedAt,
                 post.updated_at AS UpdatedAt
@@ -171,13 +197,15 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
 
     public Task<PostDto?> GetByIdAsync(
         int id,
+        bool publishedOnly,
         CancellationToken cancellationToken) =>
-        GetOneAsync("post.id = @Value", id, cancellationToken);
+        GetOneAsync("post.id = @Value", id, publishedOnly, cancellationToken);
 
     public Task<PostDto?> GetBySlugAsync(
         string slug,
+        bool publishedOnly,
         CancellationToken cancellationToken) =>
-        GetOneAsync("post.slug = @Value", slug, cancellationToken);
+        GetOneAsync("post.slug = @Value", slug, publishedOnly, cancellationToken);
 
     public async Task<PostDto> CreateAsync(
         PostWrite post,
@@ -197,8 +225,7 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
                 published_at,
                 scheduled_at,
                 category_id,
-                template_id,
-                template_content
+                template_id
             )
             VALUES (
                 @Title,
@@ -210,8 +237,7 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
                 CASE WHEN @Status = 'Published' THEN NOW() ELSE NULL END,
                 @ScheduledAt,
                 @CategoryId,
-                @TemplateId,
-                CAST(@TemplateContentJson AS jsonb)
+                @TemplateId
             )
             RETURNING id;
             """;
@@ -223,10 +249,10 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
             cancellationToken: cancellationToken);
 
         var id = await db.QuerySingleAsync<int>(command);
-        await ReplaceTagsAsync(id, post.Tags, transaction, cancellationToken);
+        await ReplaceTagsAsync(id, post.TagIds, transaction, cancellationToken);
         transaction.Commit();
 
-        return (await GetByIdAsync(id, cancellationToken))!;
+        return (await GetByIdAsync(id, publishedOnly: false, cancellationToken))!;
     }
 
     public async Task<PostDto?> UpdateAsync(
@@ -253,7 +279,6 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
                 scheduled_at = @ScheduledAt,
                 category_id = @CategoryId,
                 template_id = @TemplateId,
-                template_content = CAST(@TemplateContentJson AS jsonb),
                 updated_at = NOW()
             WHERE id = @Id;
             """;
@@ -274,10 +299,10 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
             return null;
         }
 
-        await ReplaceTagsAsync(id, post.Tags, transaction, cancellationToken);
+        await ReplaceTagsAsync(id, post.TagIds, transaction, cancellationToken);
         transaction.Commit();
 
-        return await GetByIdAsync(id, cancellationToken);
+        return await GetByIdAsync(id, publishedOnly: false, cancellationToken);
     }
 
     public async Task<bool> DeleteAsync(int id, CancellationToken cancellationToken)
@@ -299,13 +324,18 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
         int id,
         CancellationToken cancellationToken)
     {
+        // Publishing is idempotent and allowed from any state: published_at
+        // is set only the first time (preserved on re-publish), and any
+        // pending schedule is cleared since the post is now live.
         const string sql = """
             UPDATE posts
             SET
                 status = 'Published',
-                published_at = NOW(),
+                published_at = COALESCE(published_at, NOW()),
+                scheduled_at = NULL,
                 updated_at = NOW()
-            WHERE id = @Id;
+            WHERE id = @Id
+            RETURNING id;
             """;
 
         var command = new CommandDefinition(
@@ -313,19 +343,92 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
             new { Id = id },
             cancellationToken: cancellationToken);
 
-        var updated = await db.ExecuteAsync(command);
-        return updated == 0 ? null : await GetByIdAsync(id, cancellationToken);
+        var updatedId = await db.QuerySingleOrDefaultAsync<int?>(command);
+        return updatedId is null ? null : await GetByIdAsync(updatedId.Value, publishedOnly: false, cancellationToken);
+    }
+
+    public async Task<bool> ExistsAsync(int id, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT EXISTS (
+                SELECT 1
+                FROM posts
+                WHERE id = @Id
+            );
+            """;
+
+        var command = new CommandDefinition(
+            sql,
+            new { Id = id },
+            cancellationToken: cancellationToken);
+
+        return await db.ExecuteScalarAsync<bool>(command);
+    }
+
+    public async Task<PostDto?> ScheduleAsync(
+        int id,
+        DateTime scheduledAt,
+        CancellationToken cancellationToken)
+    {
+        // Only Draft or Scheduled posts can be (re-)scheduled; the WHERE
+        // clause makes that an atomic check-and-set so a Published or
+        // Archived post is left untouched (0 rows affected).
+        const string sql = """
+            UPDATE posts
+            SET
+                status = 'Scheduled',
+                scheduled_at = @ScheduledAt,
+                updated_at = NOW()
+            WHERE id = @Id
+                AND status IN ('Draft', 'Scheduled')
+            RETURNING id;
+            """;
+
+        var command = new CommandDefinition(
+            sql,
+            new { Id = id, ScheduledAt = scheduledAt },
+            cancellationToken: cancellationToken);
+
+        var updatedId = await db.QuerySingleOrDefaultAsync<int?>(command);
+        return updatedId is null ? null : await GetByIdAsync(updatedId.Value, publishedOnly: false, cancellationToken);
+    }
+
+    public async Task<PostDto?> ArchiveAsync(int id, CancellationToken cancellationToken)
+    {
+        // Archiving is idempotent and allowed from any state; published_at
+        // and scheduled_at are left untouched so history is preserved.
+        const string sql = """
+            UPDATE posts
+            SET
+                status = 'Archived',
+                updated_at = NOW()
+            WHERE id = @Id
+            RETURNING id;
+            """;
+
+        var command = new CommandDefinition(
+            sql,
+            new { Id = id },
+            cancellationToken: cancellationToken);
+
+        var updatedId = await db.QuerySingleOrDefaultAsync<int?>(command);
+        return updatedId is null ? null : await GetByIdAsync(updatedId.Value, publishedOnly: false, cancellationToken);
     }
 
     private async Task<PostDto?> GetOneAsync(
         string predicate,
         object value,
+        bool publishedOnly,
         CancellationToken cancellationToken)
     {
+        var effectivePredicate = publishedOnly
+            ? $"{predicate} AND post.status = 'Published'"
+            : predicate;
+
         var command = new CommandDefinition(
             $"""
             {SelectPostSql}
-            WHERE {predicate};
+            WHERE {effectivePredicate};
             """,
             new { Value = value },
             cancellationToken: cancellationToken);
@@ -368,9 +471,16 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
         return (await db.QueryAsync<PostTagRow>(command)).AsList();
     }
 
+    /// <summary>
+    /// Links <paramref name="tagIds"/> to <paramref name="postId"/>. This
+    /// only links to existing managed tags by id — it never creates,
+    /// renames, or otherwise upserts tag rows. Callers (see
+    /// <c>PostService</c>) are responsible for validating that every id
+    /// references an existing tag before calling this method.
+    /// </summary>
     private async Task ReplaceTagsAsync(
         int postId,
-        IReadOnlyList<PostTagWrite> tags,
+        IReadOnlyList<int> tagIds,
         IDbTransaction transaction,
         CancellationToken cancellationToken)
     {
@@ -385,54 +495,28 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
             transaction,
             cancellationToken: cancellationToken));
 
-        const string resolveTagSql = """
-            WITH inserted AS (
-                INSERT INTO tags (
-                    name,
-                    slug
-                )
-                VALUES (
-                    @Name,
-                    @Slug
-                )
-                ON CONFLICT (slug) DO NOTHING
-                RETURNING id
-            )
-            SELECT id
-            FROM inserted
-            UNION ALL
-            SELECT id
-            FROM tags
-            WHERE slug = @Slug
-            LIMIT 1;
-            """;
+        if (tagIds.Count == 0)
+        {
+            return;
+        }
 
         const string insertPostTagSql = """
             INSERT INTO post_tags (
                 post_id,
                 tag_id
             )
-            VALUES (
+            SELECT
                 @PostId,
-                @TagId
-            )
+                tag_id
+            FROM UNNEST(@TagIds) AS tag_id
             ON CONFLICT DO NOTHING;
             """;
 
-        foreach (var tag in tags)
-        {
-            var tagId = await db.QuerySingleAsync<int>(new CommandDefinition(
-                resolveTagSql,
-                tag,
-                transaction,
-                cancellationToken: cancellationToken));
-
-            await db.ExecuteAsync(new CommandDefinition(
-                insertPostTagSql,
-                new { PostId = postId, TagId = tagId },
-                transaction,
-                cancellationToken: cancellationToken));
-        }
+        await db.ExecuteAsync(new CommandDefinition(
+            insertPostTagSql,
+            new { PostId = postId, TagIds = tagIds.Distinct().ToArray() },
+            transaction,
+            cancellationToken: cancellationToken));
     }
 
     private static DynamicParameters ToParameters(PostWrite post)
@@ -447,11 +531,6 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
         parameters.Add("ScheduledAt", post.ScheduledAt);
         parameters.Add("CategoryId", post.CategoryId);
         parameters.Add("TemplateId", post.TemplateId);
-        parameters.Add(
-            "TemplateContentJson",
-            post.TemplateContent is null
-                ? null
-                : JsonSerializer.Serialize(post.TemplateContent));
         return parameters;
     }
 
@@ -477,6 +556,7 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
         int? CategoryId,
         string? CategoryName,
         int? TemplateId,
+        string? TemplateKey,
         string? TemplateName,
         DateTime CreatedAt,
         DateTime UpdatedAt)
@@ -493,6 +573,7 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
             CategoryId,
             CategoryName,
             TemplateId,
+            TemplateKey,
             TemplateName,
             tags,
             CreatedAt,
@@ -512,8 +593,8 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
         int? CategoryId,
         string? CategoryName,
         int? TemplateId,
+        string? TemplateKey,
         string? TemplateName,
-        string? TemplateContentJson,
         DateTime CreatedAt,
         DateTime UpdatedAt)
     {
@@ -530,27 +611,10 @@ public sealed class PostRepository(IDbConnection db) : IPostRepository
             CategoryId,
             CategoryName,
             TemplateId,
+            TemplateKey,
             TemplateName,
-            DeserializeTemplateContent(TemplateContentJson),
             tags,
             CreatedAt,
             UpdatedAt);
-
-        private static PostTemplateContentDto? DeserializeTemplateContent(string? json)
-        {
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                return null;
-            }
-
-            try
-            {
-                return JsonSerializer.Deserialize<PostTemplateContentDto>(json);
-            }
-            catch (JsonException)
-            {
-                return null;
-            }
-        }
     }
 }

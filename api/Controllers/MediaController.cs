@@ -1,12 +1,14 @@
 using BlogSite.Api.DTOs;
 using BlogSite.Api.Results;
 using BlogSite.Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BlogSite.Api.Controllers;
 
 [ApiController]
 [Route("api/media")]
+[Authorize]
 public sealed class MediaController(MediaService mediaService) : ControllerBase
 {
     /// <summary>Uploads an image and returns its public media URL.</summary>

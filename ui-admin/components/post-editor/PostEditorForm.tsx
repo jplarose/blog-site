@@ -1,29 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import ImageUploadControl from "@/components/media/ImageUploadControl";
-import RichTextContent from "@/components/rte/RichTextContent";
 import RichTextEditor from "@/components/rte/RichTextEditor";
-import TemplateCanvasPreview from "@/components/template-editor/TemplateCanvasPreview";
+import { richTextJsonToHtml, richTextToHtml } from "@/components/rte/toHtml";
+import TagSelector from "@/components/post-editor/TagSelector";
+import TemplateCards from "@/components/post-editor/TemplateCards";
+import TemplatePreview from "@/components/post-editor/TemplatePreview";
 import {
   categoriesApi,
   postsApi,
+  tagsApi,
   templatesApi,
   type Category,
   type Post,
   type PostStatus,
+  type Tag,
 } from "@/lib/api";
-import { getContentBlocksInOrder, type TemplateContentBlock } from "@/lib/template-layout";
-import type {
-  LayoutTemplate,
-  TemplateContentValue,
-  TemplateGalleryItemValue,
-  TemplateImageValue,
-  TemplateSummary,
-} from "@/lib/template-schema";
+import type { CatalogTemplate, TemplateSummary } from "@/lib/catalog";
 
 type TabType = "write" | "preview";
 
@@ -48,19 +45,17 @@ export default function PostEditorForm({
     initialPost?.scheduledAt ? toDatetimeLocalValue(initialPost.scheduledAt) : "",
   );
   const [featuredImageUrl, setFeaturedImageUrl] = useState(initialPost?.featuredImageUrl ?? "");
-  const [tagsInput, setTagsInput] = useState((initialPost?.tags ?? []).join(", "));
   const [categories, setCategories] = useState<Category[]>([]);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState(
     initialPost?.categoryId ? String(initialPost.categoryId) : "",
   );
   const [selectedTemplateId, setSelectedTemplateId] = useState(
     initialPost?.templateId ? String(initialPost.templateId) : "",
   );
-  const [activeTemplate, setActiveTemplate] = useState<LayoutTemplate | null>(null);
-  const [templateContentValues, setTemplateContentValues] = useState<
-    Record<string, TemplateContentValue>
-  >(initialPost?.templateContent?.values ?? {});
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  const [activeTemplate, setActiveTemplate] = useState<CatalogTemplate | null>(null);
   const [organizationError, setOrganizationError] = useState<string | null>(null);
   const [isOrganizationLoading, setIsOrganizationLoading] = useState(true);
   const [isTemplateLoading, setIsTemplateLoading] = useState(false);
@@ -73,21 +68,23 @@ export default function PostEditorForm({
 
     async function loadOrganizationData() {
       try {
-        const [nextCategories, nextTemplates] = await Promise.all([
+        const [nextCategories, nextTemplates, nextTags] = await Promise.all([
           categoriesApi.list(),
           templatesApi.list(),
+          tagsApi.list(),
         ]);
 
         if (!isActive) return;
 
         setCategories(nextCategories);
         setTemplates(nextTemplates);
+        setTags(nextTags);
         setOrganizationError(null);
       } catch (error) {
         if (!isActive) return;
 
         setOrganizationError(
-          error instanceof Error ? error.message : "Failed to load categories and templates.",
+          error instanceof Error ? error.message : "Failed to load categories, templates, and tags.",
         );
       } finally {
         if (isActive) setIsOrganizationLoading(false);
@@ -101,19 +98,24 @@ export default function PostEditorForm({
     };
   }, []);
 
-  const selectedCategory = categories.find(
-    (category) => String(category.id) === selectedCategoryId,
-  );
-  const categoryDefaultTemplateName = selectedCategory?.defaultTemplateName;
-  const effectiveTemplateId =
-    selectedTemplateId ||
-    (selectedCategory?.defaultTemplateId ? String(selectedCategory.defaultTemplateId) : "");
+  // Resolve the existing post's tag names to ids once the managed tag list loads.
+  useEffect(() => {
+    if (!initialPost || tags.length === 0) return;
+
+    const resolvedIds = tags
+      .filter((tag) => initialPost.tags.includes(tag.name))
+      .map((tag) => tag.id);
+
+    setSelectedTagIds(resolvedIds);
+    // Only needs to run once per loaded tag list; initialPost is stable per editor instance.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tags]);
 
   useEffect(() => {
     let isActive = true;
 
     async function loadTemplate() {
-      if (!effectiveTemplateId) {
+      if (!selectedTemplateId) {
         setActiveTemplate(null);
         setTemplateError(null);
         return;
@@ -122,19 +124,10 @@ export default function PostEditorForm({
       setIsTemplateLoading(true);
 
       try {
-        const nextTemplate = await templatesApi.get(Number(effectiveTemplateId));
+        const nextTemplate = await templatesApi.get(Number(selectedTemplateId));
         if (!isActive) return;
 
         setActiveTemplate(nextTemplate);
-        setTemplateContentValues((currentValues) => {
-          const nextValues = { ...currentValues };
-          for (const block of getContentBlocksInOrder(nextTemplate.layout)) {
-            if (nextValues[block.content.key] === undefined) {
-              nextValues[block.content.key] = getDefaultContentValue(block);
-            }
-          }
-          return nextValues;
-        });
         setTemplateError(null);
       } catch (error) {
         if (!isActive) return;
@@ -151,88 +144,41 @@ export default function PostEditorForm({
     return () => {
       isActive = false;
     };
-  }, [effectiveTemplateId]);
+  }, [selectedTemplateId]);
 
-  const templateContentBlocks = useMemo(
-    () => (activeTemplate ? getContentBlocksInOrder(activeTemplate.layout) : []),
-    [activeTemplate],
-  );
-
-  function updateTemplateStringValue(bindingKey: string, value: string) {
-    setTemplateContentValues((currentValues) => ({
-      ...currentValues,
-      [bindingKey]: value,
-    }));
-  }
-
-  function updateTemplateImageValue(
-    bindingKey: string,
-    updater: (currentValue: TemplateImageValue) => TemplateImageValue,
-  ) {
-    setTemplateContentValues((currentValues) => ({
-      ...currentValues,
-      [bindingKey]: updater(asImageValue(currentValues[bindingKey])),
-    }));
-  }
-
-  function updateTemplateGalleryItem(
-    bindingKey: string,
-    itemId: string,
-    updater: (currentItem: TemplateGalleryItemValue) => TemplateGalleryItemValue,
-  ) {
-    setTemplateContentValues((currentValues) => {
-      const currentGallery = asGalleryValue(currentValues[bindingKey]);
-      return {
-        ...currentValues,
-        [bindingKey]: currentGallery.map((item) =>
-          item.id === itemId ? updater(item) : item,
-        ),
-      };
-    });
-  }
-
-  function addTemplateGalleryItem(
-    bindingKey: string,
-    uploadedUrl: string,
-  ) {
-    setTemplateContentValues((currentValues) => ({
-      ...currentValues,
-      [bindingKey]: [
-        ...asGalleryValue(currentValues[bindingKey]),
-        { id: crypto.randomUUID(), url: uploadedUrl, alt: "", caption: "" },
-      ],
-    }));
-  }
-
-  function removeTemplateGalleryItem(bindingKey: string, itemId: string) {
-    setTemplateContentValues((currentValues) => ({
-      ...currentValues,
-      [bindingKey]: asGalleryValue(currentValues[bindingKey]).filter((item) => item.id !== itemId),
-    }));
+  function toggleTag(tagId: number) {
+    setSelectedTagIds((currentIds) =>
+      currentIds.includes(tagId)
+        ? currentIds.filter((id) => id !== tagId)
+        : [...currentIds, tagId],
+    );
   }
 
   async function submitPost(nextStatus: PostStatus) {
+    if (!selectedTemplateId) {
+      setSubmitError("Choose a template before saving.");
+      return;
+    }
+
     setIsSubmitting(true);
     setSubmitError(null);
 
     const payload = {
       title: title.trim(),
-      slug: slugify(title),
-      content,
+      // A published post's slug is its public permalink — preserve it on
+      // edit (even if the title changes) and only derive it from the title
+      // for brand-new posts.
+      slug: mode === "edit" && initialPost?.slug ? initialPost.slug : slugify(title),
+      // The wire contract for `content` is sanitized rich HTML (the API
+      // sanitizes HTML, the public site renders HTML). `content` state is
+      // already HTML after any edit; this also normalizes untouched legacy
+      // values (Tiptap JSON / plain text) loaded from older rows.
+      content: richTextToHtml(content),
       excerpt: excerpt.trim() || undefined,
       status: nextStatus,
       categoryId: selectedCategoryId ? Number(selectedCategoryId) : undefined,
-      templateId: effectiveTemplateId ? Number(effectiveTemplateId) : undefined,
-      templateContent: effectiveTemplateId
-        ? {
-            templateId: Number(effectiveTemplateId),
-            values: templateContentValues,
-          }
-        : undefined,
-      tags: tagsInput
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean),
+      templateId: Number(selectedTemplateId),
+      tagIds: selectedTagIds,
       featuredImageUrl: featuredImageUrl.trim() || undefined,
       scheduledAt:
         nextStatus === "Scheduled" && scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
@@ -265,6 +211,11 @@ export default function PostEditorForm({
         : mode === "edit"
           ? "Update Post"
           : "Publish";
+  const selectedTagNames = tags.filter((tag) => selectedTagIds.includes(tag.id)).map((tag) => tag.name);
+  const selectedCategoryName = categories.find(
+    (category) => String(category.id) === selectedCategoryId,
+  )?.name;
+  const canSubmit = !isSubmitting && Boolean(selectedTemplateId);
 
   return (
     <div className="space-y-6">
@@ -273,6 +224,27 @@ export default function PostEditorForm({
           ← Posts
         </Link>
         <h1 className="text-2xl font-bold text-gray-900">{pageTitle}</h1>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5 space-y-3">
+        <h2 className="font-semibold text-gray-900">
+          Template <span className="text-rose-600">*</span>
+        </h2>
+        <p className="text-sm text-gray-500">
+          Choose the layout your post will render with. This is required and has no editable
+          layout controls — only the fields below feed into it.
+        </p>
+        {organizationError ? (
+          <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            {organizationError}
+          </div>
+        ) : null}
+        <TemplateCards
+          templates={templates}
+          selectedTemplateId={selectedTemplateId}
+          onSelect={setSelectedTemplateId}
+          disabled={isOrganizationLoading}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -310,61 +282,29 @@ export default function PostEditorForm({
             </div>
 
             {activeTab === "write" ? (
-              activeTemplate ? (
-                <div className="space-y-4 p-4">
-                  {isTemplateLoading ? (
-                    <p className="text-sm text-gray-500">Loading template fields…</p>
-                  ) : null}
-                  {templateError ? (
-                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                      {templateError}
-                    </div>
-                  ) : null}
-                  <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-800">
-                    Editing with template: <strong>{activeTemplate.name}</strong>
-                  </div>
-                  {templateContentBlocks.map((block) => (
-                    <TemplateContentField
-                      key={block.id}
-                      block={block}
-                      postTitle={title}
-                      value={templateContentValues[block.content.key]}
-                      onStringChange={updateTemplateStringValue}
-                      onImageChange={updateTemplateImageValue}
-                      onGalleryItemChange={updateTemplateGalleryItem}
-                      onGalleryItemAdd={addTemplateGalleryItem}
-                      onGalleryItemRemove={removeTemplateGalleryItem}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="p-4">
-                  <RichTextEditor
-                    initialContent={content}
-                    placeholder="Write your post content here… Markdown links and spoiler syntax are supported."
-                    ariaLabel="Post content"
-                    onChange={(json) => setContent(JSON.stringify(json))}
-                    className="min-h-[480px]"
-                  />
-                </div>
-              )
-            ) : (
-              <div className="min-h-[480px] px-6 py-4 prose max-w-none">
-                {activeTemplate ? (
-                  <TemplateCanvasPreview
-                    layout={activeTemplate.layout}
-                    contentValues={templateContentValues}
-                    postTitle={title}
-                  />
-                ) : content ? (
-                  <div>
-                    {title && <h1>{title}</h1>}
-                    <RichTextContent content={content} className="text-gray-700" />
-                  </div>
-                ) : (
-                  <p className="text-gray-400 italic">Nothing to preview yet.</p>
-                )}
+              <div className="p-4">
+                <RichTextEditor
+                  initialContent={content}
+                  placeholder="Write your post content here… Markdown links and spoiler syntax are supported."
+                  ariaLabel="Post content"
+                  onChange={(json) => setContent(richTextJsonToHtml(json))}
+                  className="min-h-[480px]"
+                />
               </div>
+            ) : (
+              <TemplatePreview
+                template={activeTemplate}
+                isLoading={isTemplateLoading}
+                error={templateError}
+                fields={{
+                  title,
+                  content,
+                  excerpt,
+                  featuredImageUrl,
+                  category: selectedCategoryName ?? "",
+                  tags: selectedTagNames,
+                }}
+              />
             )}
           </div>
 
@@ -421,7 +361,7 @@ export default function PostEditorForm({
               <button
                 type="button"
                 onClick={() => void submitPost("Draft")}
-                disabled={isSubmitting}
+                disabled={!canSubmit}
                 className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-60"
               >
                 {mode === "edit" ? "Update Draft" : "Save Draft"}
@@ -429,7 +369,7 @@ export default function PostEditorForm({
               <button
                 type="button"
                 onClick={() => void submitPost(status)}
-                disabled={isSubmitting}
+                disabled={!canSubmit}
                 className="flex-1 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors disabled:opacity-60"
               >
                 {isSubmitting ? "Saving..." : primaryActionLabel}
@@ -439,12 +379,6 @@ export default function PostEditorForm({
 
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-5 space-y-4">
             <h2 className="font-semibold text-gray-900">Organization</h2>
-
-            {organizationError ? (
-              <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                {organizationError}
-              </div>
-            ) : null}
 
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">Category</label>
@@ -461,48 +395,16 @@ export default function PostEditorForm({
                   </option>
                 ))}
               </select>
-              {selectedCategory?.defaultTemplateName ? (
-                <p className="mt-2 text-xs text-gray-500">
-                  Category default template: {selectedCategory.defaultTemplateName}
-                </p>
-              ) : null}
             </div>
 
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">Tags</label>
-              <input
-                type="text"
-                value={tagsInput}
-                onChange={(event) => setTagsInput(event.target.value)}
-                placeholder="Add tags separated by commas…"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Layout Template</label>
-              <select
-                aria-label="Layout Template"
-                value={selectedTemplateId}
-                onChange={(event) => setSelectedTemplateId(event.target.value)}
+              <TagSelector
+                tags={tags}
+                selectedTagIds={selectedTagIds}
+                onToggle={toggleTag}
                 disabled={isOrganizationLoading}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-400"
-              >
-                <option value="">
-                  {categoryDefaultTemplateName
-                    ? `Use category default (${categoryDefaultTemplateName})`
-                    : "Use category default…"}
-                </option>
-                {templates.map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {template.name}
-                    {template.isDefault ? " (global default)" : ""}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-2 text-xs text-gray-500">
-                Choosing a template swaps the post editor to that template’s required fields.
-              </p>
+              />
             </div>
           </div>
 
@@ -518,195 +420,6 @@ export default function PostEditorForm({
       </div>
     </div>
   );
-}
-
-interface TemplateContentFieldProps {
-  block: TemplateContentBlock;
-  postTitle: string;
-  value: TemplateContentValue | undefined;
-  onStringChange: (bindingKey: string, value: string) => void;
-  onImageChange: (
-    bindingKey: string,
-    updater: (currentValue: TemplateImageValue) => TemplateImageValue,
-  ) => void;
-  onGalleryItemChange: (
-    bindingKey: string,
-    itemId: string,
-    updater: (currentItem: TemplateGalleryItemValue) => TemplateGalleryItemValue,
-  ) => void;
-  onGalleryItemAdd: (
-    bindingKey: string,
-    uploadedUrl: string,
-  ) => void;
-  onGalleryItemRemove: (bindingKey: string, itemId: string) => void;
-}
-
-function TemplateContentField({
-  block,
-  postTitle,
-  value,
-  onStringChange,
-  onImageChange,
-  onGalleryItemChange,
-  onGalleryItemAdd,
-  onGalleryItemRemove,
-}: TemplateContentFieldProps) {
-  if (block.kind === "title") {
-    return (
-      <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-        <p className="text-sm font-medium text-gray-900">{block.label}</p>
-        <p className="mt-1 text-sm text-gray-600">
-          This block uses the main post title field. Current value: {postTitle || "Untitled post"}
-        </p>
-      </div>
-    );
-  }
-
-  if (block.kind === "richText") {
-    return (
-      <div className="space-y-2 rounded-xl border border-gray-200 p-4">
-        <label className="block text-sm font-medium text-gray-900">{block.label}</label>
-        <RichTextEditor
-          initialContent={typeof value === "string" ? value : ""}
-          placeholder={block.content.placeholder || `Enter ${block.label.toLowerCase()}…`}
-          ariaLabel={block.label}
-          onChange={(json) => onStringChange(block.content.key, JSON.stringify(json))}
-        />
-      </div>
-    );
-  }
-
-  if (block.kind === "image") {
-    const imageValue = asImageValue(value);
-
-    return (
-      <div className="space-y-3 rounded-xl border border-gray-200 p-4">
-        <label className="block text-sm font-medium text-gray-900">{block.label}</label>
-        <ImageUploadControl
-          label={block.label}
-          value={imageValue.url}
-          onUploaded={(url) =>
-            onImageChange(block.content.key, (currentValue) => ({
-              ...currentValue,
-              url,
-            }))
-          }
-        />
-        <input
-          type="text"
-          value={imageValue.alt ?? ""}
-          onChange={(event) =>
-            onImageChange(block.content.key, (currentValue) => ({
-              ...currentValue,
-              alt: event.target.value,
-            }))
-          }
-          placeholder="Alt text"
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-        />
-        <input
-          type="text"
-          value={imageValue.caption ?? ""}
-          onChange={(event) =>
-            onImageChange(block.content.key, (currentValue) => ({
-              ...currentValue,
-              caption: event.target.value,
-            }))
-          }
-          placeholder="Caption"
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-        />
-      </div>
-    );
-  }
-
-  const galleryItems = asGalleryValue(value);
-
-  return (
-    <div className="space-y-3 rounded-xl border border-gray-200 p-4">
-      <div className="flex items-center justify-between">
-        <label className="block text-sm font-medium text-gray-900">{block.label}</label>
-      </div>
-      <ImageUploadControl
-        label={`Add ${block.label} image`}
-        onUploaded={(url) => onGalleryItemAdd(block.content.key, url)}
-      />
-
-      {galleryItems.length > 0 ? (
-        galleryItems.map((item) => (
-          <div key={item.id} className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
-            <ImageUploadControl
-              label={`${block.label} image`}
-              value={item.url}
-              onUploaded={(url) =>
-                onGalleryItemChange(block.content.key, item.id, (currentItem) => ({
-                  ...currentItem,
-                  url,
-                }))
-              }
-            />
-            <input
-              type="text"
-              value={item.alt ?? ""}
-              onChange={(event) =>
-                onGalleryItemChange(block.content.key, item.id, (currentItem) => ({
-                  ...currentItem,
-                  alt: event.target.value,
-                }))
-              }
-              placeholder="Alt text"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-            <input
-              type="text"
-              value={item.caption ?? ""}
-              onChange={(event) =>
-                onGalleryItemChange(block.content.key, item.id, (currentItem) => ({
-                  ...currentItem,
-                  caption: event.target.value,
-                }))
-              }
-              placeholder="Caption"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            />
-            <button
-              type="button"
-              onClick={() => onGalleryItemRemove(block.content.key, item.id)}
-              className="rounded border border-rose-200 px-2 py-1 text-xs text-rose-600"
-            >
-              Remove
-            </button>
-          </div>
-        ))
-      ) : (
-        <p className="text-sm text-gray-500">No gallery images added yet.</p>
-      )}
-    </div>
-  );
-}
-
-function getDefaultContentValue(block: TemplateContentBlock): TemplateContentValue {
-  switch (block.kind) {
-    case "title":
-    case "richText":
-      return "";
-    case "image":
-      return { url: "", alt: "", caption: "" };
-    case "gallery":
-      return [];
-  }
-}
-
-function asImageValue(value: TemplateContentValue | undefined): TemplateImageValue {
-  if (!value || typeof value === "string" || Array.isArray(value)) {
-    return { url: "", alt: "", caption: "" };
-  }
-
-  return value;
-}
-
-function asGalleryValue(value: TemplateContentValue | undefined): TemplateGalleryItemValue[] {
-  return Array.isArray(value) ? value : [];
 }
 
 function slugify(value: string) {

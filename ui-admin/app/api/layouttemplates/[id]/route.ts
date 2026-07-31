@@ -8,13 +8,3 @@ export async function GET(request: Request, context: RouteContext) {
   const { id } = await context.params;
   return proxyApiRequest(request, `/api/layouttemplates/${id}`);
 }
-
-export async function PUT(request: Request, context: RouteContext) {
-  const { id } = await context.params;
-  return proxyApiRequest(request, `/api/layouttemplates/${id}`);
-}
-
-export async function DELETE(request: Request, context: RouteContext) {
-  const { id } = await context.params;
-  return proxyApiRequest(request, `/api/layouttemplates/${id}`);
-}
