@@ -42,3 +42,4 @@ yarn-debug.log*
 yarn-error.log*
 .vercel
 .worktrees/
+.playwright-mcp/
