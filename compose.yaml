@@ -34,7 +34,10 @@ services:
   ui-admin:
     image: node:22
     working_dir: /app
-    command: sh -c "npm install && npm run dev"
+    # npm ci only when the volume is empty: keeps restarts fast and never
+    # rewrites the bind-mounted package-lock.json (container npm may differ
+    # from host npm and would churn the lockfile).
+    command: sh -c "[ -d node_modules/.bin ] || npm ci; npm run dev"
     environment:
       PORT: "3000"
     network_mode: host
@@ -48,7 +51,7 @@ services:
   ui-site:
     image: node:22
     working_dir: /app
-    command: sh -c "npm install && npm run dev"
+    command: sh -c "[ -d node_modules/.bin ] || npm ci; npm run dev"
     environment:
       PORT: "3001"
       NEXT_PUBLIC_API_URL: http://localhost:5017
