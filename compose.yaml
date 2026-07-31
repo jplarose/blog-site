@@ -1,6 +1,6 @@
 # Dev-mode stack: all three apps with hot reload, single command:
 #
-#   docker compose -f docker-compose.dev.yml up
+#   docker compose up
 #
 #   api       http://localhost:5017   (dotnet watch)
 #   ui-admin  http://localhost:3000   (next dev)
