@@ -97,6 +97,15 @@ public static class AddAuthApiJwtExtension
             return;
         }
 
+        var services = context.HttpContext.RequestServices;
+        var authOptions = services.GetRequiredService<IOptions<AuthOptions>>().Value;
+        var environment = services.GetRequiredService<IHostEnvironment>();
+
+        if (authOptions.DisableJtiValidation && environment.IsDevelopment())
+        {
+            return;
+        }
+
         var jtiValidator = context.HttpContext.RequestServices
             .GetRequiredService<IJtiValidator>();
 

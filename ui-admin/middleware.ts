@@ -8,9 +8,15 @@ function hasSessionCookie(request: NextRequest): boolean {
   );
 }
 
+// Local-development bypass; the edge runtime cannot import lib/auth/dev-bypass
+// (node:crypto), so the flag check is duplicated here.
+function isDevAuthBypassEnabled(): boolean {
+  return process.env.NODE_ENV !== "production" && process.env.DEV_AUTH_BYPASS === "true";
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const authenticated = hasSessionCookie(request);
+  const authenticated = hasSessionCookie(request) || isDevAuthBypassEnabled();
 
   if (pathname === "/login") {
     if (authenticated) {

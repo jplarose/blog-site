@@ -47,7 +47,7 @@ VALUES (
     'article',
     'Article',
     'Standard long-form post layout with a hero image, title and meta, and flowing rich content. Use this as the default choice for most blog posts.',
-    '<article class="tpl-article">
+    $tpl$<article class="tpl-article">
   <header class="tpl-article__header">
     {{#featuredImage}}
     <img class="tpl-article__hero" src="{{featuredImage}}" alt="{{title}}" />
@@ -63,8 +63,8 @@ VALUES (
   <div class="tpl-article__content">
     {{content}}
   </div>
-</article>',
-    '.tpl-article { max-width: 720px; margin: 0 auto; padding: 2rem 1rem; }
+</article>$tpl$,
+    $tpl$.tpl-article { max-width: 720px; margin: 0 auto; padding: 2rem 1rem; }
 .tpl-article__header { margin-bottom: 2rem; }
 .tpl-article__hero { display: block; width: 100%; max-width: 100%; height: auto; border-radius: 0.5rem; margin-bottom: 1.5rem; }
 .tpl-article__title { font-size: 2.5rem; font-weight: 700; line-height: 1.2; margin: 0 0 0.75rem; }
@@ -79,10 +79,10 @@ VALUES (
 .tpl-article__content pre { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 0.375rem; overflow-x: auto; }
 .tpl-article__content code { font-family: monospace; }
 .tpl-article__content img { max-width: 100%; height: auto; border-radius: 0.25rem; }
-@media (max-width: 640px) {
+  @media (max-width: 640px) {
   .tpl-article { padding: 1.25rem 1rem; }
   .tpl-article__title { font-size: 1.875rem; }
-}'
+}$tpl$
 )
 ON CONFLICT (template_key) DO UPDATE SET
     name = EXCLUDED.name,
@@ -99,7 +99,7 @@ VALUES (
     'feature',
     'Feature',
     'Editorial feature layout with a full-bleed hero image, an overlaid prominent title, lede/excerpt emphasis, and wider typography. Use this for flagship or spotlight stories.',
-    '<article class="tpl-feature">
+    $tpl$<article class="tpl-feature">
   {{#featuredImage}}
   <div class="tpl-feature__hero-wrap">
     <img class="tpl-feature__hero" src="{{featuredImage}}" alt="{{title}}" />
@@ -119,8 +119,8 @@ VALUES (
     </div>
     <footer class="tpl-feature__tags">{{tags}}</footer>
   </div>
-</article>',
-    '.tpl-feature { width: 100%; margin: 0 auto; }
+</article>$tpl$,
+    $tpl$.tpl-feature { width: 100%; margin: 0 auto; }
 .tpl-feature__hero-wrap { position: relative; width: 100%; margin-bottom: -3rem; }
 .tpl-feature__hero { display: block; width: 100%; max-width: 100%; height: auto; max-height: 70vh; object-fit: cover; }
 .tpl-feature__header { position: relative; z-index: 1; margin: 0 0 1.5rem; }
@@ -138,11 +138,11 @@ VALUES (
 .tpl-feature__content pre { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 0.375rem; overflow-x: auto; }
 .tpl-feature__content code { font-family: monospace; }
 .tpl-feature__tags { margin-top: 2rem; font-size: 0.875rem; color: #6b7280; }
-@media (max-width: 640px) {
+  @media (max-width: 640px) {
   .tpl-feature__title { font-size: 2rem; }
   .tpl-feature__lede { font-size: 1.1875rem; }
   .tpl-feature__body { padding: 1.5rem 1rem 2rem; }
-}'
+}$tpl$
 )
 ON CONFLICT (template_key) DO UPDATE SET
     name = EXCLUDED.name,
@@ -159,7 +159,7 @@ VALUES (
     'photo-essay',
     'Photo Essay',
     'Image-forward layout with large imagery, generous whitespace, and a captions-style content flow. Use this for photo-driven storytelling where images carry the narrative.',
-    '<article class="tpl-photo-essay">
+    $tpl$<article class="tpl-photo-essay">
   <header class="tpl-photo-essay__header">
     <h1 class="tpl-photo-essay__title">{{title}}</h1>
     <p class="tpl-photo-essay__excerpt">{{excerpt}}</p>
@@ -177,8 +177,8 @@ VALUES (
   <div class="tpl-photo-essay__content">
     {{content}}
   </div>
-</article>',
-    '.tpl-photo-essay { max-width: 900px; margin: 0 auto; padding: 3rem 1.5rem; }
+</article>$tpl$,
+    $tpl$.tpl-photo-essay { max-width: 900px; margin: 0 auto; padding: 3rem 1.5rem; }
 .tpl-photo-essay__header { max-width: 640px; margin: 0 auto 3rem; text-align: center; }
 .tpl-photo-essay__title { font-size: 2.25rem; font-weight: 700; line-height: 1.25; margin: 0 0 1rem; }
 .tpl-photo-essay__excerpt { font-size: 1.125rem; color: #4b5563; line-height: 1.6; margin: 0 0 1rem; }
@@ -196,10 +196,10 @@ VALUES (
 .tpl-photo-essay__content figcaption { text-align: center; font-size: 0.9375rem; color: #6b7280; margin-top: -2rem; margin-bottom: 3rem; }
 .tpl-photo-essay__content pre { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 0.375rem; overflow-x: auto; max-width: 640px; margin: 0 auto 1.75rem; }
 .tpl-photo-essay__content code { font-family: monospace; }
-@media (max-width: 640px) {
+  @media (max-width: 640px) {
   .tpl-photo-essay { padding: 2rem 1rem; }
   .tpl-photo-essay__title { font-size: 1.75rem; }
-}'
+}$tpl$
 )
 ON CONFLICT (template_key) DO UPDATE SET
     name = EXCLUDED.name,

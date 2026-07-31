@@ -30,6 +30,10 @@ internal sealed class AuthTestWebApplicationFactory : WebApplicationFactory<Prog
     {
         builder.UseEnvironment("Development");
 
+        // appsettings.Development.json enables the local-dev jti bypass; these
+        // tests exercise revocation, so force the real validation path.
+        builder.UseSetting("Auth:DisableJtiValidation", "false");
+
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<IJtiValidator>();

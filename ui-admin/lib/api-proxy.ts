@@ -1,6 +1,7 @@
 import "server-only";
 
 import { refreshTokenInternal } from "@/lib/auth/auth-api";
+import { isDevAuthBypassEnabled, mintDevAccessToken } from "@/lib/auth/dev-bypass";
 import {
   buildClearedCookieHeaders,
   buildSessionCookieHeaders,
@@ -96,7 +97,8 @@ function unauthorizedResponse(): Response {
 export async function proxyApiRequest(request: Request, path: string) {
   const backendUrl = buildBackendUrl(path, request);
   const requestBody = await readRequestBody(request);
-  const accessToken = getAccessToken(request);
+  const accessToken =
+    getAccessToken(request) ?? (isDevAuthBypassEnabled() ? mintDevAccessToken() : null);
 
   const sendToBackend = (token: string | null) =>
     fetch(backendUrl, {

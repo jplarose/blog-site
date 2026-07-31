@@ -22,6 +22,14 @@ public sealed class AuthOptions
     /// Opaque API key sent as <c>X-Api-Key</c> on revocation checks.
     /// </summary>
     public string ApiKey { get; init; } = "";
+
+    /// <summary>
+    /// Local-development escape hatch: when true, tokens are still fully
+    /// signature/lifetime validated but the per-request jti revocation
+    /// callback to the Auth API is skipped. Only honored in the Development
+    /// environment; ignored everywhere else.
+    /// </summary>
+    public bool DisableJtiValidation { get; init; }
 }
 
 /// <summary>

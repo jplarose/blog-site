@@ -122,9 +122,7 @@ public sealed class AnalyticsRepository(IDbConnection db) : IAnalyticsRepository
             AnalyticsAggregation.RankTopPosts(topPostRows),
             AnalyticsAggregation.BuildDailySeries(
                 window,
-                dailyRows.Select(row => new DailyViewDto(
-                    DateOnly.FromDateTime(row.Date),
-                    row.ViewCount))));
+                dailyRows.Select(row => new DailyViewDto(row.Date, row.ViewCount))));
     }
 
     /// <summary>
@@ -179,5 +177,7 @@ public sealed class AnalyticsRepository(IDbConnection db) : IAnalyticsRepository
 
     private sealed record StatusCountRow(string Status, int Count);
 
-    private sealed record DailyViewRow(DateTime Date, int ViewCount);
+    // Npgsql maps `date` columns to DateOnly; Dapper's constructor matching
+    // needs the parameter type to line up exactly.
+    private sealed record DailyViewRow(DateOnly Date, int ViewCount);
 }
